@@ -1,0 +1,52 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(**/building_db/**)",
+      "Edit(**/building_db/**)",
+      "Read(**/building-truth-v1/**)",
+      "Edit(**/building-truth-v1/**)",
+      "Read(**/building-truth-v2/**)",
+      "Edit(**/building-truth-v2/**)",
+      "Bash(*building_db*)",
+      "Bash(*building-truth-v1*)",
+      "Bash(*building-truth-v2*)",
+      "Bash(*btruth decide*)",
+      "Bash(*btruth approve*)",
+      "Bash(*btruth reject*)",
+      "Bash(*btruth rule*--set*)",
+      "Edit(CONCEPT.md)",
+      "Edit(**/CONCEPT.md)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Read|Edit|Write|MultiEdit|NotebookEdit|Glob|Grep|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard_paths.py\""
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard_confirm.py\""
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard_concept.py\""
+          }
+        ]
+      }
+    ]
+  }
+}

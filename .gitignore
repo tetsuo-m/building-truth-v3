@@ -1,0 +1,7 @@
+CLAUDE.local.md
+CONCEPT.md
+.venv/
+__pycache__/
+.pytest_cache/
+out/
+.claude/settings.local.json
