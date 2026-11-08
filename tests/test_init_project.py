@@ -28,7 +28,20 @@ def test_default_structure_has_one_first_storey(tmp_path):
     storeys = [e for e, k in kinds.items() if k == "階"]
     assert len(storeys) == 1
     assert names[storeys[0]] == "1階"
-    assert sorted(kinds.values()) == sorted(["敷地", "建物", "階", "外部"])
+    assert sorted(kinds.values()) == sorted(["物件", "敷地", "建物", "階", "外部"])
+
+
+def test_the_project_is_an_element_too(tmp_path):
+    """改訂 6 (2): the project is an element (種類=物件); the project table points at it."""
+    _, store = make_project(tmp_path, name="架空の物件")
+    kinds, names = kinds_of(store), names_of(store)
+    [proj] = [e for e, k in kinds.items() if k == "物件"]
+    assert names[proj] == "架空の物件"
+    assert store.conn.execute("select element_id from project").fetchone()[0] == proj
+    # 集める: 敷地 → 物件 (an element, not the project row)
+    site = [e for e, k in kinds.items() if k == "敷地"][0]
+    to = store.conn.execute("select to_element_id, role_json from relation where from_element_id=?", (site,)).fetchone()
+    assert to[0] == proj and to[1] is None
 
 
 def test_default_structure_is_an_interpretation_of_the_rule_reader(tmp_path):
@@ -36,11 +49,14 @@ def test_default_structure_is_an_interpretation_of_the_rule_reader(tmp_path):
     row = store.conn.execute(
         "select i.summary, a.kind from interpretation i join agent a on a.id = i.agent_id").fetchone()
     assert tuple(row) == ("既定の構成", "規則の読み手")
-    # 集める: 階 -> 建物 -> 敷地 -> 物件 (E-7 / C-2b)
+    # 集める: 階 -> 建物 -> 敷地 -> 物件, 外部 -> 敷地 (E-7 / C-2b)
     rels = store.conn.execute("select kind, from_element_id, to_element_id from relation").fetchall()
     assert all(k == "集める" for k, _, _ in rels)
     assert len(rels) == 4  # 敷地→物件, 建物→敷地, 階→建物, 外部→敷地
-    assert count(store, "select count(*) from element") == 4
+    assert count(store, "select count(*) from element") == 5
+    # every default claim is a 記述 (statement_kind); no 決定 is invented
+    kinds_of_statement = {r[0] for r in store.conn.execute("select distinct statement_kind from claim")}
+    assert kinds_of_statement == {"記述"}
 
 
 def test_project_folder_layout_and_settings(tmp_path):
@@ -70,17 +86,30 @@ def test_default_csv_tables_are_copied_and_loaded(tmp_path):
     assert ek["階"] == "IfcBuildingStorey"
     assert ek["空間の境界"] == "IfcRelSpaceBoundary"
     assert ek["開口"] == "IfcOpeningElement"
-    rk = {r[0]: r[1] for r in store.conn.execute("select kind, max_per_from from relation_kinds_loaded")}
-    assert rk["含む"] == "1" and rk["くり抜く"] == "1"
-    attrs = {r[0] for r in store.conn.execute("select attribute from attributes_loaded")}
-    assert {"種類", "名前", "外部か", "ElementId"} <= attrs
+    rk = {r[0]: (r[1], r[2]) for r in store.conn.execute("select kind, max_per_from, from_kinds from relation_kinds_loaded")}
+    assert rk["含む"][0] == "1" and rk["くり抜く"][0] == "1"
+    assert "開口" not in rk["含む"][1].split("+")          # 改訂 6 (4): openings are not contained in a storey
+    assert ek["物件"] == "IfcProject"
+    attrs = {(r[0], r[1]) for r in store.conn.execute("select attribute, applies_to from attributes_loaded")}
+    names = {a for a, _ in attrs}
+    assert {"種類", "名前", "外部か", "ElementId"} <= names
+    # 改訂 6 (1): the three meanings of "kind" have three names
+    assert ("境界の種類", "空間の境界") in attrs and ("建具の種類", "建具") in attrs
+    assert ("種類", "*") in attrs
+    assert not {a for a, t in attrs if a == "種類" and t != "*"}
+    authority = {(r[0], r[1]) for r in store.conn.execute("select element_kind, attribute from authority_loaded")}
+    assert ("建具", "建具の種類") in authority and ("建具", "種類") not in authority
 
 
 def test_rules_hold_the_tolerances_in_one_place(tmp_path):
     project, store = make_project(tmp_path)
-    rules = {r[0]: r[1] for r in store.conn.execute("select key, value from rules_loaded")}
-    assert rules["same_position_mm"] == "0.1"
-    assert rules["same_angle_deg"] == "0.01"
+    rules = {r[0]: (r[1], r[2]) for r in store.conn.execute("select key, value, use from rules_loaded")}
+    assert rules["same_position_mm"][0] == "0.1"
+    assert rules["same_angle_deg"][0] == "0.01"
+    # 改訂 6 (14): every tolerance says where it is used; none is for comparing documents with each other
+    assert rules["door_width_tol_mm"][1] == "図面の計測" and rules["gap_tol_mm"][1] == "図面の計測"
+    assert all(use for _, use in rules.values()), rules
+    assert not [k for k, (_, use) in rules.items() if use == "書類の比較" and k.endswith("_mm")]
     with open(project.folder / "rules" / "rules.csv", encoding="utf-8-sig", newline="") as f:
         keys = [row["key"] for row in csv.DictReader(f)]
     assert keys.count("same_position_mm") == 1

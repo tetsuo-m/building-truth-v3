@@ -29,6 +29,14 @@ class UnsupportedFormat(Exception):
     pass
 
 
+class SourceExists(Exception):
+    """`mode="new"` but a source with that name already exists (A-2, 改訂 6 (6))."""
+
+
+class SourceNotFound(Exception):
+    """`mode="next"` but no source with that name exists."""
+
+
 @dataclass
 class ImportResult:
     source_id: str | None
@@ -39,11 +47,18 @@ class ImportResult:
     generated_count: int = 0
     notes: list = field(default_factory=list)
     file_name: str = ""
+    seq: int | None = None
+    source_created: bool | None = None      # True: new source, False: next version of an existing one
 
 
 def import_file(store: Store, project: ProjectFolder, path: Path, source_name: str | None = None,
                 kind: str | None = None, drawing_type: str | None = None, discipline: str | None = None,
-                document_date: str | None = None, recorded_by: str = "取り込みのコマンド") -> ImportResult:
+                document_date: str | None = None, mode: str = "auto",
+                recorded_by: str = "取り込みのコマンド") -> ImportResult:
+    """mode (改訂 6 (6)): "next" = the next version of an existing source (the file name may differ),
+    "new" = a new source (stops if the name exists), "auto" = next if the name exists, else new."""
+    if mode not in ("auto", "new", "next"):
+        raise ValueError(f"mode は auto / new / next のどれか: {mode}")
     path = Path(path)
     reader = reader_for(path)
     if reader is None:
@@ -52,6 +67,14 @@ def import_file(store: Store, project: ProjectFolder, path: Path, source_name: s
     rules = effective_rules(store, project)
     project_id = store.project_id()
     sha = sha256_of(path)
+
+    # A-2 / 改訂 6 (6): what the person asked for (next version / new source) is checked before anything else
+    source_name = source_name or path.stem
+    row = store.one("select id from source where project_id=? and name=?", project_id, source_name)
+    if mode == "next" and not row:
+        raise SourceNotFound(f"出どころ「{source_name}」がありません（--next は既存の出どころの次の版として取り込む）")
+    if mode == "new" and row:
+        raise SourceExists(f"出どころ「{source_name}」はすでにあります（--new は新しい出どころとして取り込む。別の呼び名を）")
 
     # A-3: the same content is never taken in twice (ids must not change on re-import)
     existing = store.one("select id, source_id from source_version where sha256=?", sha)
@@ -64,12 +87,11 @@ def import_file(store: Store, project: ProjectFolder, path: Path, source_name: s
                             existing_version_id=existing["id"], file_name=path.name)
 
     # A-2: the source (出どころ) is found by name within the project, or created
-    source_name = source_name or path.stem
-    row = store.one("select id from source where project_id=? and name=?", project_id, source_name)
     if row:
-        source_id = row["id"]
+        source_id, source_created = row["id"], False
     else:
         source_id = store.insert("source", recorded_by, project_id=project_id, name=source_name, kind=kind, note=None)
+        source_created = True
     for attribute, value in (("図面の種類", drawing_type), ("分野", discipline)):
         if value:
             store.insert("source_attribute", recorded_by, source_id=source_id, attribute=attribute, value=value,
@@ -144,4 +166,5 @@ def import_file(store: Store, project: ProjectFolder, path: Path, source_name: s
         "generated_top_level": sum(generated.values())}))
     store.commit()
     return ImportResult(source_id=source_id, source_version_id=version_id, counts=dict(counts),
-                        generated_count=sum(generated.values()), notes=result.notes, file_name=path.name)
+                        generated_count=sum(generated.values()), notes=result.notes, file_name=path.name,
+                        seq=seq, source_created=source_created)

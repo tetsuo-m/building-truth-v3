@@ -23,8 +23,13 @@ def test_init_import_report_compare_through_the_command(tmp_path):
     assert "step1.dxf" in r.stdout
     r = run("import", folder, STEP1, "--source", "平面図")
     assert r.returncode == 0 and "同じ中身" in r.stdout
-    r = run("import", folder, STEP1_JW, "--source", "平面図")
+    r = run("import", folder, STEP1_JW, "--source", "平面図", "--next")
     assert r.returncode == 0, r.stderr
+    assert "次の版" in r.stdout
+    r = run("import", folder, STEP1_JW, "--source", "別の図面", "--next")
+    assert r.returncode != 0 and "ありません" in r.stderr
+    r = run("import", folder, STEP1, "--source", "平面図", "--new")
+    assert r.returncode != 0 and "すでにあります" in r.stderr
     r = run("versions", folder)
     assert r.returncode == 0 and "平面図@1" in r.stdout and "平面図@2" in r.stdout
     r = run("compare", folder, "平面図@1", "平面図@2")

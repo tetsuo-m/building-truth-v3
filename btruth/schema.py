@@ -16,14 +16,14 @@ import sqlite3
 
 from btruth.common import now_iso
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 COMMON = "id TEXT PRIMARY KEY, recorded_at TEXT NOT NULL, recorded_by TEXT NOT NULL"
 
 # name -> columns besides the common three. Comments give the design section.
 TABLES: dict[str, str] = {
     # A. project, sources, versions, intake
-    "project": "name TEXT, created_at TEXT, schema_version INTEGER",                          # A-1
+    "project": "name TEXT, created_at TEXT, schema_version INTEGER, element_id TEXT",         # A-1 (element_id: 改訂 6)
     "source": "project_id TEXT, name TEXT, kind TEXT, note TEXT",                              # A-2 (kind = 書類の区分)
     "source_attribute": "source_id TEXT, attribute TEXT, value TEXT, origin TEXT",            # A-2
     "source_version": ("source_id TEXT, seq INTEGER, file_name TEXT, sha256 TEXT, format TEXT, reader_name TEXT, "
@@ -31,7 +31,7 @@ TABLES: dict[str, str] = {
                        "imported_by TEXT, writeback_id TEXT, note TEXT"),                     # A-3
     "intake_log": "source_version_id TEXT, kind TEXT, detail_json TEXT",                      # A-4
     "table_load": "kind TEXT, scope TEXT, path TEXT, sha256 TEXT, row_count INTEGER, loaded_at TEXT",   # A-5
-    "rules_loaded": "table_load_id TEXT, key TEXT, value TEXT, unit TEXT, origin TEXT, since TEXT, note TEXT",  # J-1
+    "rules_loaded": "table_load_id TEXT, key TEXT, value TEXT, unit TEXT, origin TEXT, since TEXT, use TEXT, note TEXT",  # J-1 (use: 改訂 6)
     "authority_loaded": ("table_load_id TEXT, element_kind TEXT, attribute TEXT, primary_source_kind TEXT, "
                          "secondary_source_kinds TEXT, core TEXT, note TEXT"),                # J-2
     "document_rank_loaded": "table_load_id TEXT, source_kind TEXT, rank TEXT, compare_only TEXT, note TEXT",  # J-3
@@ -55,7 +55,8 @@ TABLES: dict[str, str] = {
     "relation_end": "relation_id TEXT, reason TEXT",                                           # C-2
     # D. claims
     "claim": ("subject_kind TEXT, subject_id TEXT, attribute TEXT, value_json TEXT, unit TEXT, mode TEXT, "
-              "source_version_id TEXT, interpretation_id TEXT, review_id TEXT, agent_id TEXT, confidence REAL"),  # D-1
+              "statement_kind TEXT, source_version_id TEXT, interpretation_id TEXT, review_id TEXT, agent_id TEXT, "
+              "confidence REAL"),                                                              # D-1 (statement_kind: 決定／未決／記述, 改訂 6)
     "claim_evidence": "claim_id TEXT, clue_id TEXT, role TEXT, reason TEXT",                   # D-1
     # E. interpretations
     "agent": "name TEXT, kind TEXT, model TEXT, version TEXT, instructions_sha256 TEXT",       # E-1
@@ -122,20 +123,60 @@ TRIGGERS = [
 ]
 
 
+# Changes to a vessel that already exists, by the version that introduces them. A fresh vessel gets the
+# full TABLES above and records every version as applied; an older vessel runs only what it lacks.
+MIGRATIONS: dict[int, list[str]] = {
+    2: [
+        "alter table project add column element_id TEXT",            # 改訂 6 (2): the project is an element
+        "alter table claim add column statement_kind TEXT",          # 改訂 6 (3): 決定／未決／記述
+        "alter table rules_loaded add column use TEXT",              # 改訂 6 (14): where a rule value is used
+    ],
+}
+
+
 def table_names() -> list[str]:
     return list(TABLES)
 
 
+def _applied_versions(conn: sqlite3.Connection) -> list[int]:
+    conn.execute("create table if not exists schema_migration (version INTEGER PRIMARY KEY, applied_at TEXT, applied_by TEXT)")
+    return [r[0] for r in conn.execute("select version from schema_migration order by version")]
+
+
+def _record(conn: sqlite3.Connection, version: int, applied_by: str) -> None:
+    conn.execute("insert or ignore into schema_migration(version, applied_at, applied_by) values (?, ?, ?)",
+                 (version, now_iso(), applied_by))
+
+
 def create_all(conn: sqlite3.Connection, applied_by: str = "器を作るコマンド") -> None:
-    """Create every table, index and trigger (idempotent) and record the vessel's version."""
+    """Create every table, index and trigger of a fresh vessel and record the vessel's version."""
     cur = conn.cursor()
     for name, cols in TABLES.items():
         cur.execute(f"create table if not exists {name} ({COMMON}, {cols})")
-    cur.execute("create table if not exists schema_migration (version INTEGER PRIMARY KEY, applied_at TEXT, applied_by TEXT)")
     for sql in INDEXES:
         cur.execute(sql)
     for name, event, message in TRIGGERS:
         cur.execute(f"create trigger if not exists {name} {event} begin select raise(abort, '{message}'); end")
-    cur.execute("insert or ignore into schema_migration(version, applied_at, applied_by) values (?, ?, ?)",
-                (SCHEMA_VERSION, now_iso(), applied_by))
+    _applied_versions(conn)                            # creates schema_migration
+    for version in range(1, SCHEMA_VERSION + 1):      # a fresh vessel already has every change
+        _record(conn, version, applied_by)
     conn.commit()
+
+
+def migrate(conn: sqlite3.Connection, applied_by: str = "器の更新") -> list[int]:
+    """Bring an existing vessel up to SCHEMA_VERSION without rebuilding it. Returns the versions applied."""
+    applied = _applied_versions(conn)
+    current = max(applied) if applied else 0
+    done = []
+    for version in range(current + 1, SCHEMA_VERSION + 1):
+        for sql in MIGRATIONS.get(version, []):
+            conn.execute(sql)
+        for name, cols in TABLES.items():                 # tables added later are created whole
+            conn.execute(f"create table if not exists {name} ({COMMON}, {cols})")
+        _record(conn, version, applied_by)
+        done.append(version)
+    if done:
+        conn.execute("update project set schema_version = ?, recorded_at = ?, recorded_by = ?",
+                     (SCHEMA_VERSION, now_iso(), applied_by))
+        conn.commit()
+    return done

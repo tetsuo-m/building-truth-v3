@@ -77,6 +77,35 @@ def test_review_rows_cannot_be_updated_or_deleted(tmp_path):
         conn.execute("delete from review_premise where id='p1'")
 
 
+def test_columns_added_by_the_second_review_exist(tmp_path):
+    """改訂 6: project points at the project element (2), claim has statement_kind (3), rules have `use` (14)."""
+    _, store = make_project(tmp_path)
+    cols = lambda t: {r[1] for r in store.conn.execute(f"pragma table_info({t})")}
+    assert "element_id" in cols("project")
+    assert "statement_kind" in cols("claim")
+    assert "use" in cols("rules_loaded")
+
+
+def test_an_older_vessel_is_migrated_without_rebuilding(tmp_path):
+    """The vessel's version lets later stages add columns and tables without recreating the database."""
+    from btruth.schema import SCHEMA_VERSION, migrate
+
+    _, store = make_project(tmp_path)
+    conn = store.conn
+    # make the database look like version 1 (the shape committed in a120810)
+    conn.execute("alter table project drop column element_id")
+    conn.execute("alter table claim drop column statement_kind")
+    conn.execute("alter table rules_loaded drop column use")
+    conn.execute("delete from schema_migration where version > 1")
+    conn.execute("update project set schema_version = 1")
+    conn.commit()
+    applied = migrate(conn, applied_by="テスト")
+    assert applied == list(range(2, SCHEMA_VERSION + 1))
+    assert "element_id" in {r[1] for r in conn.execute("pragma table_info(project)")}
+    assert conn.execute("select schema_version from project").fetchone()[0] == SCHEMA_VERSION
+    assert migrate(conn, applied_by="テスト") == []          # idempotent
+
+
 def test_review_signature_columns_exist_and_stay_empty(tmp_path):
     _, store = make_project(tmp_path)
     cols = {r[1] for r in store.conn.execute("pragma table_info(review)")}

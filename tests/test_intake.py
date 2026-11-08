@@ -76,6 +76,25 @@ def test_second_version_of_the_same_source_gets_seq_2(tmp_path):
     assert count(store, "select count(*) from source") == 1
 
 
+def test_next_version_of_a_source_even_when_the_file_name_differs(tmp_path):
+    """改訂 6 (6): the person chooses: next version of an existing source, or a new source."""
+    from btruth.intake import SourceExists, SourceNotFound, import_file
+    import pytest
+
+    project, store = make_project(tmp_path)
+    r1 = import_file(store, project, STEP1, source_name="1階平面図", kind="設計図", recorded_by="テスト")
+    r2 = import_file(store, project, STEP2, source_name="1階平面図", mode="next", recorded_by="テスト")
+    assert r2.source_id == r1.source_id and r2.seq == 2 and r2.source_created is False
+    with pytest.raises(SourceNotFound):
+        import_file(store, project, STEP2, source_name="無い名前", mode="next", recorded_by="テスト")
+    with pytest.raises(SourceExists):
+        import_file(store, project, STEP2, source_name="1階平面図", mode="new", recorded_by="テスト")
+    other = one_room_dxf(tmp_path / "other.dxf", dx=1.0)
+    r3 = import_file(store, project, other, source_name="2階平面図", mode="new", recorded_by="テスト")
+    assert r3.source_created is True and r3.seq == 1
+    assert count(store, "select count(*) from source") == 2
+
+
 def test_generated_layer_is_kept_but_excluded_from_observation(tmp_path):
     from btruth.intake import import_file
 

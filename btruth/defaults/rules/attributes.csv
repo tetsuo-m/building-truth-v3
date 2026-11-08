@@ -1,5 +1,8 @@
 attribute,applies_to,ifc_pset,ifc_property,ifc_attribute,value_type,note
-種類,*,,,,text,要素の種類。一覧は element_kinds.csv
+種類,*,,,,text,要素の種類（部屋・壁・開口…）。一覧は element_kinds.csv。境界の物理的／仮想は「境界の種類」、建具の扉／窓は「建具の種類」（改訂 6）
+境界の種類,空間の境界,,,PhysicalOrVirtualBoundary,text,物理的／仮想。区間で違うときは区間ごとの値（決定 Q20）
+建具の種類,建具,,,,text,扉／窓／…。IfcDoor か IfcWindow かをこれで分ける
+建具の種類,建具の型,,,,text,建具表の行の種類
 名前,*,,,Name,text,
 ElementId,*,BT_Common,ElementId,,text,DB の ID そのもの（3-8-4 (f)）
 主の分野,*,BT_Common,PrimaryDiscipline,,text,主の表から決まる（E-3）
@@ -12,7 +15,9 @@ ElementId,*,BT_Common,ElementId,,text,DB の ID そのもの（3-8-4 (f)）
 符号,壁種,,,Tag,text,
 符号,柱,,,Tag,text,
 符号,通り芯,,,AxisTag,text,
-位置,*,,,,point_mm,壁基準と絶対の両方（C-2d）
+位置,*,,,,point_mm,開口・建具は壁基準（くり抜く壁の始点からの距離）だけ。絶対の位置は計算する（C-2d、改訂 6）
+観測時の絶対位置,開口,BT_Common,ObservedAbsolutePosition,,point_mm,読んだ時点の座標の記録（B-10）。有効値には使わない
+観測時の絶対位置,建具,BT_Common,ObservedAbsolutePosition,,point_mm,同上
 芯線,壁,,,,segment_mm,始点と終点（C-2e）
 厚さ,壁,Qto_WallBaseQuantities,Width,,length_mm,
 外部か,壁,Pset_WallCommon,IsExternal,,bool,境界の向かい合う先が外部か、で計算（C-2c）

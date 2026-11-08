@@ -1,17 +1,18 @@
-key,value,unit,origin,since,note
-same_position_mm,0.1,mm,人の決定,2026-11-07,位置・長さ・半径の「同じ」の幅（B-14）。保存する値は丸めず、比べるときだけ使う
-same_angle_deg,0.01,deg,人の決定,2026-11-07,角度の「同じ」の幅（B-14）
-gap_tol_mm,50,mm,人の回答（v2 Q37）,2026-11-05,隙間の上限。試験で調整する値（仮）
-door_width_tol_mm,100,mm,人の回答（v2 Q2）,2026-11-05,建具の幅の許容差
-column_offset_max_mm,500,mm,人の回答（v2 Q7）,2026-11-05,柱の偏心の上限
-footing_offset_max_mm,1000,mm,人の回答（v2 Q7）,2026-11-05,基礎の偏心の上限
-wall_move_max_mm,1000,mm,人の回答（v2 Q50）,2026-11-06,壁の同定で「移動」と結べる上限
-reread_margin_mm,1000,mm,仮の決定（v3 Q6）,2026-11-08,AI に渡す範囲の余白。試験で調整する値（仮）
-generated_layer_prefix,BT_GEN_,,人の決定,2026-11-07,正本が書いたレイヤの印（H-2、M-1）
-dxf_default_unit_factor,1.0,mm,仮の決定,2026-11-08,DXF に $INSUNITS がないときの座標 1 の長さ
-issue_severity.室内窓,記録のみ,,人の回答（v2 Q4）,2026-11-05,D-8
-issue_severity.追加削除.部屋,要確認,,人の決定（v3 Q10）,2026-11-08,
-issue_severity.追加削除.壁,要確認,,人の決定（v3 Q10）,2026-11-08,
-issue_severity.追加削除.*,記録のみ,,人の決定（v3 Q10）,2026-11-08,
-opening_min_deduct_m2,0.5,m2,人の回答（v2 Q31）,2026-11-05,差し引かない開口の上限
-board_loss_rate,0.10,,人の回答（v2 Q20）,2026-11-05,ボードの割増
+key,value,unit,origin,since,use,note
+same_position_mm,0.1,mm,人の決定,2026-11-07,図面の計測,位置・長さ・半径の「同じ」の幅（B-14）。保存する値は丸めず、比べるときだけ使う。同定にも使う
+same_angle_deg,0.01,deg,人の決定,2026-11-07,図面の計測,角度の「同じ」の幅（B-14）。同定にも使う
+gap_tol_mm,50,mm,人の回答（v2 Q37）,2026-11-05,図面の計測,隙間の上限。図面の形を測るときだけ（書類どうしには使わない。決定 14）。試験で調整する値（仮）
+door_width_tol_mm,100,mm,人の回答（v2 Q2）,2026-11-05,図面の計測,図面の建具の幅と建具表の呼び幅を比べる許容差。書類どうし（建具表と議事録）はぴったり比べる（決定 14）
+column_offset_max_mm,500,mm,人の回答（v2 Q7）,2026-11-05,図面の計測,柱の偏心の上限
+footing_offset_max_mm,1000,mm,人の回答（v2 Q7）,2026-11-05,図面の計測,基礎の偏心の上限
+wall_move_max_mm,1000,mm,人の回答（v2 Q50）,2026-11-06,同定,壁の同定で「移動」と結べる上限
+reread_margin_mm,1000,mm,仮の決定（v3 Q6）,2026-11-08,同定,AI に渡す範囲の余白。試験で調整する値（仮）
+generated_layer_prefix,BT_GEN_,,人の決定,2026-11-07,取り込み,正本が書いたレイヤの印（H-2、M-1）
+dxf_default_unit_factor,1.0,mm,仮の決定,2026-11-08,取り込み,DXF に $INSUNITS がないときの座標 1 の長さ
+issue_severity.室内窓,記録のみ,,人の回答（v2 Q4）,2026-11-05,照らし,D-8
+issue_severity.追加削除.部屋,要確認,,人の決定（v3 Q10）,2026-11-08,照らし,
+issue_severity.追加削除.壁,要確認,,人の決定（v3 Q10）,2026-11-08,照らし,
+issue_severity.追加削除.*,記録のみ,,人の決定（v3 Q10）,2026-11-08,照らし,
+opening_min_deduct_m2,0.5,m2,人の回答（v2 Q31）,2026-11-05,出口,差し引かない開口の上限
+board_loss_rate,0.10,,人の回答（v2 Q20）,2026-11-05,出口,ボードの割増
+default_storey_height_mm,2700,mm,仮の決定（v3 Q23）,2026-11-08,出口,階高・壁の高さがないときに IFC で押し出す高さ（HeightAssumed を付ける）。第6段で決める

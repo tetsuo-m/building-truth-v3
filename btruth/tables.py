@@ -26,7 +26,7 @@ class TableKind:
 
 TABLE_KINDS: dict[str, TableKind] = {t.kind: t for t in [
     TableKind("rules", "rules/rules.csv", "rules_loaded",
-              ("key", "value", "unit", "origin", "since", "note"), ("key",)),
+              ("key", "value", "unit", "origin", "since", "use", "note"), ("key",)),
     TableKind("authority", "rules/authority.csv", "authority_loaded",
               ("element_kind", "attribute", "primary_source_kind", "secondary_source_kinds", "core", "note"),
               ("element_kind", "attribute")),

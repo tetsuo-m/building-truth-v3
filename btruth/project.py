@@ -112,7 +112,7 @@ def init_project(folder: Path, name: str, office_dir: Path | None = None,
         register_readers(store, recorded_by)
         from btruth.tables import load_tables
         load_tables(store, project, recorded_by=recorded_by)
-        create_default_structure(store, project_id, recorded_by)
+        create_default_structure(store, project_id, name, recorded_by)
         store.commit()
     return project
 
@@ -128,12 +128,14 @@ def register_readers(store: Store, recorded_by: str) -> None:
         store.insert("reader", recorded_by, name=r.name, version=r.version, formats=",".join(r.formats), note=r.note)
 
 
-def create_default_structure(store: Store, project_id: str, recorded_by: str) -> None:
-    """C-2b / E-2 / decision Q17: 敷地 1, 建物 1, 階 1 (named 1階), 外部 1, aggregated down to the project.
+def create_default_structure(store: Store, project_id: str, project_name: str, recorded_by: str) -> None:
+    """C-2b / E-2 / decisions Q17 and 改訂 6 (2): 物件 1, 敷地 1, 建物 1, 階 1 (named 1階), 外部 1,
+    aggregated 階 → 建物 → 敷地 → 物件 and 外部 → 敷地. The project row points at the 物件 element.
 
     They are an interpretation of the rule reader (agent.kind = 規則の読み手, summary = 既定の構成), so the
-    kinds and names are observed claims that count as the default reading (D-2 step 3) until a person
-    renames them.
+    kinds and names are observed claims (statement_kind = 記述) that count as the default reading
+    (D-2 step 3) until a person renames them. This is the only reading of the rule reader that counts
+    without approval (D-1, 改訂 6 (11)).
     """
     agent_id = store.insert("agent", recorded_by, name="規則の読み手", kind="規則の読み手", model=None,
                             version=__version__, instructions_sha256=None)
@@ -147,20 +149,22 @@ def create_default_structure(store: Store, project_id: str, recorded_by: str) ->
                             rule_check_status="通った")
         for attribute, value in (("種類", kind), ("名前", name)):
             store.insert("claim", recorded_by, subject_kind="element", subject_id=eid, attribute=attribute,
-                         value_json=dumps(value), mode="観測", interpretation_id=interp, agent_id=agent_id,
-                         confidence=1.0)
+                         value_json=dumps(value), mode="観測", statement_kind="記述", interpretation_id=interp,
+                         agent_id=agent_id, confidence=1.0)
         return eid
 
+    proj = element("物件", project_name)
     site = element("敷地", "敷地")
     building = element("建物", "建物")
     storey = element("階", "1階")
     outside = element("外部", "外部")
+    store.set_project(recorded_by, element_id=proj)      # A-1: the project row points at its element
 
-    def aggregate(child: str, parent: str, **role) -> None:
+    def aggregate(child: str, parent: str) -> None:
         store.insert("relation", recorded_by, kind="集める", from_element_id=child, to_element_id=parent,
-                     role_json=dumps(role) if role else None, created_by_interpretation_id=interp)
+                     role_json=None, created_by_interpretation_id=interp)
 
-    aggregate(site, project_id, to_kind="project")      # 敷地 → 物件 (the project row is the top; E-7)
+    aggregate(site, proj)                                # 敷地 → 物件（要素）
     aggregate(building, site)
     aggregate(storey, building)
     aggregate(outside, site)                             # the outside belongs to the site (decision Q17)

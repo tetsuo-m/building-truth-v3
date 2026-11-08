@@ -23,7 +23,7 @@
 - **ID と列**（0-2）：UUID v4 の文字列。`recorded_by` は、コマンドの `--by`、なければ環境変数 `BTRUTH_USER`、なければログインの名前。
 - **積み重ね**（B-6）：`Store` に `insert` しかない。`review` のトリガーは「うっかりよけ」で守りではない（G-1 (d)）。
 - **器の版**：`project.schema_version` と `schema_migration`。表を足すときは `schema.TABLES` に行を足し、版を上げて `create_all` を流す（`create table if not exists` なので作り直さない）。
-- **既定の構成**（C-2b）：敷地・建物・1階・外部は、`agent(kind=規則の読み手)` の `interpretation(summary=既定の構成)` が作った要素。種類と名前は観測の言い分（D-2 の 3 番目、既定の読み方）。`集める` は 階→建物→敷地→物件（敷地の `集める` の相手は `project` の ID。`role_json={"to_kind":"project"}`）、外部→敷地。
+- **既定の構成**（C-2b）：物件・敷地・建物・1階・外部は、`agent(kind=規則の読み手)` の `interpretation(summary=既定の構成)` が作った要素。種類と名前は観測の言い分（D-2 の 3 番目、既定の読み方。承認なしで使えるのはこれだけ）。`集める` は 階→建物→敷地→物件（要素）、外部→敷地。
 - **書類の区分**（A-2）：`source.kind` は人が `--kind` で指定した区分、なければ空（NULL）。図面の種類と分野は `source_attribute`（`origin=コマンドで指定`。v2 Q57）。同じ呼び名の出どころに別の区分を指定したときは、`source_attribute(書類の区分)` の行を足す（訂正は行で）。
 - **手掛かり**（B-1）：値は ezdxf が返す float を JSON の `repr` で書く（丸めない）。単位は `source_version.unit_factor`（`$INSUNITS` から。なければ 1.0 とみなして記録）。ブロックの定義は `BLOCK_DEF` の手掛かり、その中の図形は `parent_clue_id` で指す。レイヤごとの数・文字コード・修復・単位・ブロックの数を `intake_log` に書く（B-6）。
 - **Jw_cad の DXF**：`$DWGCODEPAGE` がないので、物件の設定 `dxf_default_codepage`（既定 ANSI_932）を仮定して読み、そのことを記録する。表の名前が空で ezdxf の通常の読み込みが止まるので `ezdxf.recover` で読み、修復の数を記録する。座標は Jw_cad が書いたまま（原点のずれは比べるときに揃える）。
@@ -31,6 +31,18 @@
 - **比べ方**（B-14）：役割は `settings/layer_roles.csv` の部分一致（`GRID` は `_0-2_GRID` にも当たる）。枠は、両方の版にある一番小さい `X`・`Y` の符号の文字の位置の交点（v2 Q62・Q65-3・Q66）。幅は `rules.csv` の `same_position_mm`・`same_angle_deg` だけ。文字はぴったり。揃えたこと・一致の数・追加の候補を、新しい版の `intake_log` に書く。これは第4段の同定の足場で、要素には触れない。
 - **読み残し**（B-3）：観測の手掛かり（最上位、生成物でない、`BLOCK_DEF` でない）のうち、`interpretation_evidence`・`claim_evidence`・`assumption_evidence` のどれからも指されていないもの。第2段では解釈がないので全部が読み残し。
 - **読み方の知識の CSV**：書いた日時の列は `written_at`（**Q22**）。
+
+## 改訂 6（2026-11-08、外の AI の 2 回目の見直しへの人の決定）で作り直した所
+
+- **「種類」の名前を三つに**（決定 1）：`attributes.csv` に `境界の種類`（空間の境界。IFC の PhysicalOrVirtualBoundary）と `建具の種類`（建具・建具の型。IfcDoor か IfcWindow かを決める）を足し、`種類` は要素の種類だけに。`authority.csv` の建具の行も `建具の種類`。
+- **物件も要素**（決定 2）：既定の構成に 物件（種類＝物件、名前＝物件の名前）を足し、敷地 → 物件 を `集める` でつなぐ。`project.element_id` が物件の要素を指す（`Store.set_project` で書ける列に足した）。`element_kinds.csv` に `物件, IfcProject`。
+- **言い分の文の種類**（決定 3）：`claim.statement_kind`（決定／未決／記述）。既定の構成の言い分は 記述。
+- **開口は含むでつながない**（決定 4）：`relation_kinds.csv` の `含む` の from_kinds から開口を外した。
+- **くり抜くの幅**（決定 5）：`relation_kinds.csv` の注に「role_json は位置だけ」。
+- **次の版か新しい出どころか**（決定 6）：`import_file(..., mode="auto"|"next"|"new")`、コマンドは `--next` / `--new`。`--next` で呼び名がなければ `SourceNotFound`、`--new` で呼び名があれば `SourceExists`。どちらにしたかを出力に書く。sha256 の重複の確かめより先に、この指定を確かめる。
+- **許容差の使い先**（決定 14）：`rules.csv` に `use` の列（図面の計測／同定／取り込み／照らし／出口）。書類どうしはぴったり比べるので、許容差の行に「書類の比較」はない。
+- **器の版の更新**：`SCHEMA_VERSION` を 2 に。`schema.migrate` が、版 1 の器に `project.element_id`・`claim.statement_kind`・`rules_loaded.use` を足す（`alter table`）。`Store.open` が既存の器を開くときに自動で当てる。作り直さない。
+- 設計書だけで直した所（境界の相手の区間と開口の絶対の位置は保存せず計算、有効値の読み方、承認の前の確かめ、照らしの選択肢と開いている要確認、同定の根拠の出どころ分け、IFC の対応表）は、第3段以降の実装の対象。
 
 ## 設計書と違う形にした所（`QUESTIONS.md`）
 

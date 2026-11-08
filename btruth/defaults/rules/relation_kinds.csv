@@ -1,11 +1,11 @@
 kind,from_kinds,to_kinds,ifc_relation,max_per_from,note
 集める,敷地+建物+階+部屋+外部,物件+敷地+建物+階,IfcRelAggregates,1,空間の構成（C-2b）
-含む,壁+柱+建具+器具+開口+分電盤,階,IfcRelContainedInSpatialStructure,1,一つの要素につき一つの階だけ（決定 10）
+含む,壁+柱+建具+器具+分電盤,階,IfcRelContainedInSpatialStructure,1,一つの要素につき一つの階だけ（決定 10）。開口はつながない（階はくり抜く壁の階。改訂 6）
 区切る,空間の境界,部屋+外部,IfcRelSpaceBoundary,1,RelatingSpace
-境界の相手,空間の境界,壁+開口,IfcRelSpaceBoundary,,RelatedBuildingElement。role_json に区間（決定 5）
+境界の相手,空間の境界,壁+開口,IfcRelSpaceBoundary,,RelatedBuildingElement。どの相手かだけ。区間は保存せず計算（決定 5、改訂 6）
 向かい合う,空間の境界,空間の境界,,,同じ線の両側（決定 Q13・Q17）
 接する,壁+柱,壁+柱,IfcRelConnectsElements,,
-くり抜く,開口,壁,IfcRelVoidsElement,1,一つの開口につき一つの壁だけ（決定 11）
+くり抜く,開口,壁,IfcRelVoidsElement,1,一つの開口につき一つの壁だけ（決定 11）。role_json は位置だけ。幅は開口の言い分（改訂 6）
 ふさぐ,建具,開口,IfcRelFillsElement,,角をまたぐ窓は開口を二つ
 載る,柱,通り芯,,2,通り芯の交点
 型である,壁+建具+柱+部品,壁種+建具の型+柱の型+材料,IfcRelDefinesByType,1,E-5

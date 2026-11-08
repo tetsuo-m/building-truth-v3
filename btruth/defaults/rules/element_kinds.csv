@@ -1,4 +1,5 @@
 kind,ifc_class,ifc_predefined_type,is_type,note
+物件,IfcProject,,no,物件も要素（改訂 6）。project の表はこの要素を指す
 敷地,IfcSite,,no,空間の構成（E-7）
 建物,IfcBuilding,,no,
 階,IfcBuildingStorey,,no,一階建てでも「1階」を一つ持つ（E-2）

@@ -41,22 +41,24 @@ def cmd_init(args) -> int:
 
 
 def cmd_import(args) -> int:
-    from btruth.intake import UnsupportedFormat, import_file
+    from btruth.intake import SourceExists, SourceNotFound, UnsupportedFormat, import_file
     from btruth.project import ProjectFolder, open_store
     project = ProjectFolder.load(Path(args.folder))
+    mode = "new" if args.new else ("next" if args.next else "auto")
     with open_store(project) as store:
         try:
             r = import_file(store, project, Path(args.file), source_name=args.source, kind=args.kind,
                             drawing_type=args.drawing_type, discipline=args.discipline,
-                            document_date=args.document_date, recorded_by=_who(args))
-        except UnsupportedFormat as exc:
+                            document_date=args.document_date, mode=mode, recorded_by=_who(args))
+        except (UnsupportedFormat, SourceExists, SourceNotFound) as exc:
             print(str(exc), file=sys.stderr)
             return 2
     if r.skipped:
         print(f"{r.file_name}: 同じ中身の版がすでにあります（{r.existing_version_id}）。取り込みません。記録だけ残しました。")
         return 0
     total = sum(r.counts.values())
-    print(f"{r.file_name}: 取り込みました。版 {r.source_version_id}、観測の手掛かり {total}、生成物として外した {r.generated_count}。")
+    how = "新しい出どころ" if r.source_created else f"既存の出どころの次の版（版 {r.seq}）"
+    print(f"{r.file_name}: 取り込みました（{how}）。版 {r.source_version_id}、観測の手掛かり {total}、生成物として外した {r.generated_count}。")
     for (layer, kind), n in sorted(r.counts.items()):
         print(f"  {layer:<24} {kind:<12} {n}")
     for kind, detail in r.notes:
@@ -129,7 +131,10 @@ def build_parser() -> argparse.ArgumentParser:
     sp = sub.add_parser("import", help="図面・表・文章を取り込む")
     common(sp)
     sp.add_argument("file", help="取り込むファイル（dxf / csv / txt / md）")
-    sp.add_argument("--source", help="出どころの呼び名（同じ呼び名なら次の版になる。既定: ファイル名）")
+    sp.add_argument("--source", help="出どころの呼び名（既定: ファイル名）")
+    how = sp.add_mutually_exclusive_group()
+    how.add_argument("--next", action="store_true", help="既存の出どころの次の版として取り込む（ファイル名が変わってもよい。呼び名がなければ止める）")
+    how.add_argument("--new", action="store_true", help="新しい出どころとして取り込む（同じ呼び名があれば止める）")
     sp.add_argument("--kind", help="書類の区分（法律／議事録／現場説明書／特記仕様書／設計図／事務所の基準／標準仕様書／施工図／条件／その他）")
     sp.add_argument("--drawing-type", help="図面の種類（建築平面図、壁種表、凡例、…）")
     sp.add_argument("--discipline", help="分野（建築／構造／電気／機械設備）")

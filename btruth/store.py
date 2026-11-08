@@ -30,6 +30,8 @@ class Store:
         store = cls(conn)
         if create:
             schema.create_all(conn)
+        else:
+            schema.migrate(conn)          # an older vessel is brought up to date, never rebuilt
         return store
 
     def close(self) -> None:
@@ -78,8 +80,8 @@ class Store:
 
     # ------------------------------------------------------------------ the one exception (A-1)
     def set_project(self, recorded_by: str, **cols) -> None:
-        """The project's own settings (name, schema_version) may be rewritten (A-1, 0-2)."""
-        allowed = {"name", "schema_version"}
+        """The project's own settings (name, schema_version, element_id) may be rewritten (A-1, 0-2)."""
+        allowed = {"name", "schema_version", "element_id"}
         bad = set(cols) - allowed
         if bad:
             raise ValueError(f"project で直せるのは {sorted(allowed)} だけ: {sorted(bad)}")
