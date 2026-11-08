@@ -750,3 +750,27 @@ def confirm_drawing(store: Store, project: ProjectFolder, writeback_id: str, rea
     _write_premises(store, rid, {("table_load", x[1]) for x in _table_premises(store)}, reviewed_by)
     store.commit()
     return rid
+
+
+# ---------------------------------------------------------------- stage 6: export the IFC although the delivery requirements are not met (L-2)
+def allow_ifc(store: Store, project: ProjectFolder, generation_id: str, reason: str | None, reviewed_by: str,
+              confirm: Callable[[str], bool] | None = None) -> str | None:
+    require_terminal(project.db_path)
+    rows = store.all("select * from generation where id like ? and kind='IFC'", generation_id + "%")
+    if len(rows) != 1:
+        raise ValueError(f"止めた IFC の生成が一つに決まりません: {generation_id}（{len(rows)} 件）")
+    g = rows[0]
+    fails = store.all("select c.result, c.subject_ids_json, d.text_ref from condition_check c join condition d on d.id=c.condition_id "
+                      "where c.generation_id=? and c.result<>'満たす'", g["id"])
+    text = [f"受け渡しの要件を満たさない IFC（{g['path']}）を、それでも出すと記録する（{len(fails)} 件）"]
+    text += [f"  {f['text_ref']}：{f['result']}  {f['subject_ids_json']}" for f in fails[:20]]
+    text.append(f"  理由 {reason or '（なし）'}")
+    if not (reason or "").strip():
+        raise ValueError("それでも出すときは理由が要ります（人が書く）")
+    confirm = confirm or _confirm_default(project.db_path)
+    if not confirm("\n".join(text)):
+        return None
+    rid = _write_review(store, "generation", g["id"], "それでも出す", {"満たさない": len(fails)}, reason, reviewed_by)
+    _write_premises(store, rid, _table_premises(store), reviewed_by)
+    store.commit()
+    return rid

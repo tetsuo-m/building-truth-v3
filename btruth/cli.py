@@ -384,6 +384,38 @@ def cmd_confirm_drawing(args) -> int:
     return _run_review(args, go)
 
 
+def cmd_ifc(args) -> int:
+    from btruth.ifc import IfcStopped, export_ifc
+    project, store = _open(args)
+    with store:
+        out = Path(args.out) if args.out else project.out_dir / "model.ifc"
+        try:
+            r = export_ifc(store, project, out, recorded_by=_who(args), generation_id=args.generation)
+        except IfcStopped as exc:
+            print(str(exc), file=sys.stderr)
+            for f in exc.failures[:20]:
+                print(f"  満たさない：{f['name']}  要素 {f['element_id']}", file=sys.stderr)
+            print(f"  要確認は `btruth issues` で見る。それでも出すときは、人が端末で `btruth allow-ifc {args.folder} --generation "
+                  f"{exc.generation_id[:8]} --reason \"…\"` を打ち、`btruth ifc {args.folder} --generation {exc.generation_id[:8]}` で出す。",
+                  file=sys.stderr)
+            return 3
+        print(f"IFC を書きました: {r['path']}（IFC4）")
+        print(f"  対応表（GlobalId・材料の名前 → DB の ID）: {r['mapping']}")
+        print(f"  レポート（既定の高さで押し出した要素 {len(r['height_assumed'])}、要確認が開いている要素）: {r['report']}")
+    return 0
+
+
+def cmd_allow_ifc(args) -> int:
+    from btruth.review import allow_ifc
+
+    def go(project, store):
+        rid = allow_ifc(store, project, args.generation, reason=args.reason, reviewed_by=_who(args), confirm=_confirm_wrapper(args))
+        if rid:
+            print(f"「それでも出す」を記録しました（review {rid}）。`btruth ifc {args.folder} --generation {args.generation}` で出す。")
+        return rid
+    return _run_review(args, go)
+
+
 def cmd_values(args) -> int:
     """Read-only: an element's attributes with their effective value (D-1), where it came from, and every claim."""
     from btruth.common import loads
@@ -770,6 +802,12 @@ def build_parser() -> argparse.ArgumentParser:
     common(sp)
     sp.set_defaults(func=cmd_writebacks)
 
+    sp = sub.add_parser("ifc", help="IFC（IFC4）と対応表とレポートを出す。受け渡しの要件の IDS を先に照らし、満たさなければ出さない")
+    common(sp)
+    sp.add_argument("--out", help="書き出す先（既定: <物件のフォルダ>/out/model.ifc）")
+    sp.add_argument("--generation", help="止めた IFC の生成の ID（人が allow-ifc を打った後に、出す）")
+    sp.set_defaults(func=cmd_ifc)
+
     sp = sub.add_parser("values", help="要素の属性ごとの有効値と、その出どころ、全部の言い分（読むだけ）")
     common(sp)
     sp.add_argument("--element", required=True, help="要素の ID（先頭でよい）")
@@ -864,6 +902,12 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--writeback", required=True, help="書き戻しの ID（先頭でよい）")
     sp.add_argument("--reason", help="理由（人が書く）")
     sp.set_defaults(func=cmd_confirm_drawing)
+
+    sp = confirm_parser("allow-ifc", "受け渡しの要件を満たさない IFC を、それでも出すと記録する（L-2）")
+    common(sp)
+    sp.add_argument("--generation", required=True, help="止めた IFC の生成の ID（先頭でよい）")
+    sp.add_argument("--reason", help="理由（人が書く。必須）")
+    sp.set_defaults(func=cmd_allow_ifc)
 
     sp = confirm_parser("choose", "要確認の選択肢を選ぶ（選択肢に書かれた採用・前提を書く。決定 13）")
     common(sp)

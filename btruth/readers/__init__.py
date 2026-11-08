@@ -9,9 +9,10 @@ from pathlib import Path
 from btruth.readers.base import ClueRecord, ReadResult, Reader
 from btruth.readers.csv_reader import CsvReader
 from btruth.readers.dxf_reader import DxfReader
+from btruth.readers.ids_reader import IdsReader
 from btruth.readers.text_reader import TextReader
 
-READERS: list[Reader] = [DxfReader(), CsvReader(), TextReader()]
+READERS: list[Reader] = [DxfReader(), CsvReader(), TextReader(), IdsReader()]
 
 
 def reader_for(path: Path) -> Reader | None:

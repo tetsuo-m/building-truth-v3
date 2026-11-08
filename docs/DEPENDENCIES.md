@@ -12,5 +12,6 @@
 - 第3段（2026-11-08）で足したライブラリはない。理解の確認の画面（HTML＋SVG＋少しの JavaScript）、幾何の計算、端末の判定（`sys`・`os`・`tempfile`）も標準ライブラリだけ。
 - 第4段（2026-11-08）で足したライブラリはない。節点の網の目・面の対応・差分のレポートも標準ライブラリだけ。
 - 第5段（2026-11-08）で足したライブラリはない。整合の照らし・区間・材料の層も標準ライブラリだけ。
+- 第6段（2026-11-08）で足したライブラリはない。IFC（IFC4、STEP の文字の形式）は標準ライブラリだけで書き、IDS の XML は標準ライブラリの `xml.etree.ElementTree` で読む。IfcOpenShell（LGPL-3.0）は**依存に入れていない**。書いた IFC が IFC4 の決まりに合うかを確かめるためだけに、リポジトリの外に置く別の環境（`out/_ifcvenv`、Git に入れない）に IfcOpenShell 0.9.0 を入れ、`ifcopenshell.validate`（決まりの確かめ）と `ifcopenshell.geom`（形が作れるか）で確かめた。btruth のコードからは呼ばない。
 - フック（`.claude/hooks/*.py`）は標準ライブラリだけで動く（venv なしで Windows でも動かすため）。
 - 入れる手順：`python -m venv .venv` → `.venv\Scripts\python -m pip install -e .[dev]`（または `pip install ezdxf pytest`）。

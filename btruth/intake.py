@@ -150,6 +150,21 @@ def import_file(store: Store, project: ProjectFolder, path: Path, source_name: s
             else:
                 counts[(rec.layer_raw or "", rec.kind)] += 1
 
+    # L-1: an IDS file — one condition row per specification (the rule reader's reading; conditions are not claims)
+    if result.format == "ids":
+        categories = ("法律", "系統の規則", "設計の規則", "受け渡しの要件")
+        dt = store.scalar("select value from source_attribute where source_id=? and attribute='図面の種類' order by rowid desc limit 1",
+                          source_id)
+        for cid, rec in zip(ids, result.clues):
+            if rec.kind != "SPECIFICATION":
+                continue
+            purpose = (rec.format_extra or {}).get("purpose")
+            category = purpose if purpose in categories else (dt if dt in categories else "設計の規則")
+            store.insert("condition", recorded_by, form="ids", source_version_id=version_id, clue_id=cid, category=category,
+                         text_ref=(rec.format_extra or {}).get("ids", {}).get("name"),
+                         ids_json=dumps((rec.format_extra or {}).get("ids")), rule_json=None,
+                         severity="要確認", scope_json=dumps({"title": (rec.format_extra or {}).get("title")}))
+
     # A-4: the intake log (B-6: nothing silently)
     def log(kind: str, detail: dict) -> None:
         store.insert("intake_log", recorded_by, source_version_id=version_id, kind=kind, detail_json=dumps(detail))
