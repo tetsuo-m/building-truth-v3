@@ -1,0 +1,19 @@
+kind,from_kinds,to_kinds,ifc_relation,max_per_from,note
+集める,敷地+建物+階+部屋+外部,物件+敷地+建物+階,IfcRelAggregates,1,空間の構成（C-2b）
+含む,壁+柱+建具+器具+開口+分電盤,階,IfcRelContainedInSpatialStructure,1,一つの要素につき一つの階だけ（決定 10）
+区切る,空間の境界,部屋+外部,IfcRelSpaceBoundary,1,RelatingSpace
+境界の相手,空間の境界,壁+開口,IfcRelSpaceBoundary,,RelatedBuildingElement。role_json に区間（決定 5）
+向かい合う,空間の境界,空間の境界,,,同じ線の両側（決定 Q13・Q17）
+接する,壁+柱,壁+柱,IfcRelConnectsElements,,
+くり抜く,開口,壁,IfcRelVoidsElement,1,一つの開口につき一つの壁だけ（決定 11）
+ふさぐ,建具,開口,IfcRelFillsElement,,角をまたぐ窓は開口を二つ
+載る,柱,通り芯,,2,通り芯の交点
+型である,壁+建具+柱+部品,壁種+建具の型+柱の型+材料,IfcRelDefinesByType,1,E-5
+組み立てを持つ,壁種,層の組み立て,IfcRelAssociatesMaterial,1,型に付く
+層である,層の組み立て,材料,IfcMaterialLayer,,role_json に順・面・厚さ・枚数
+使う,壁,層の組み立て,IfcMaterialLayerSetUsage,1,実物の使い方
+部品である,部品,壁,IfcRelAggregates,1,例外のときだけ（E-4）
+属する,器具+回路,回路+分電盤,IfcRelAssignsToGroup,,系統（E-3）
+貫通する,貫通する部分,壁,IfcRelVoidsElement,,
+参照する,*,*,IfcRelReferencedInSpatialStructure,,分野の参照（E-3）と、またがる要素の階からの参照（決定 10）
+定義する,記号の定義,*,,,凡例の記号で読んだ要素（K）

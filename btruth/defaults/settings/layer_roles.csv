@@ -1,0 +1,5 @@
+scope,layer_pattern,entity_kind,roles,note
+物件,GRID,*,GRID,通り芯の線と符号。部分一致なので Jw_cad の _0-2_GRID にも当たる（J-4）
+物件,ROOM_BOUNDARY,*,ROOM_BOUNDARY,部屋割り線
+物件,WALL_CENTER,*,WALL_CENTER,壁芯線
+物件,ROOM_NAME,*,ROOM_NAME,室名の文字

@@ -1,0 +1,23 @@
+kind,ifc_class,ifc_predefined_type,is_type,note
+敷地,IfcSite,,no,空間の構成（E-7）
+建物,IfcBuilding,,no,
+階,IfcBuildingStorey,,no,一階建てでも「1階」を一つ持つ（E-2）
+外部,IfcExternalSpatialElement,,no,建物の外側を一つの空間として持つ（決定 Q17）
+部屋,IfcSpace,,no,名前のない空間も（B-12）
+空間の境界,IfcRelSpaceBoundary,,no,部屋の輪郭の角と角のあいだ。物理的／仮想（E-2、決定 Q13）
+壁,IfcWall,,no,
+開口,IfcOpeningElement,,no,壁をくり抜く（E-2）。一つの壁だけ（決定 11）
+建具,IfcDoor,,no,窓は IfcWindow。言い分「種類」で分ける
+柱,IfcColumn,,no,
+通り芯,IfcGridAxis,,no,IfcGrid の軸
+器具,IfcFlowTerminal,,no,電気・設備の器具
+回路,IfcDistributionSystem,,no,系統（E-3）
+分電盤,IfcElectricDistributionBoard,,no,
+貫通する部分,IfcBuildingElementProxy,,no,設備が壁を貫く所の要素（E-3）。仮の対応
+壁種,IfcWallType,,yes,壁の型（E-5）
+建具の型,IfcDoorType,,yes,建具表の行
+柱の型,IfcColumnType,,yes,柱リストの行
+材料,IfcMaterial,,yes,型の側（E-4）
+層の組み立て,IfcMaterialLayerSet,,yes,壁種の層構成（E-4）
+部品,IfcBuildingElementPart,,no,例外のときだけの個体（E-4）
+記号の定義,,,no,凡例を読んだ結果（C-2）。IFC には出さない

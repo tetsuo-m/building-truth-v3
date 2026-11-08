@@ -1,0 +1,35 @@
+attribute,applies_to,ifc_pset,ifc_property,ifc_attribute,value_type,note
+種類,*,,,,text,要素の種類。一覧は element_kinds.csv
+名前,*,,,Name,text,
+ElementId,*,BT_Common,ElementId,,text,DB の ID そのもの（3-8-4 (f)）
+主の分野,*,BT_Common,PrimaryDiscipline,,text,主の表から決まる（E-3）
+室番号,部屋,BT_Common,RoomNumber,,text,鍵（B-11）
+室名,部屋,,,LongName,text,
+部屋として扱う,部屋,BT_Common,IsRoom,,bool,B-12
+天井高,部屋,Qto_SpaceBaseQuantities,Height,,length_mm,
+面積,部屋,Qto_SpaceBaseQuantities,NetFloorArea,,area_m2,保存しない。出口で計算（B-10）
+符号,建具,,,Tag,text,鍵（B-11）
+符号,壁種,,,Tag,text,
+符号,柱,,,Tag,text,
+符号,通り芯,,,AxisTag,text,
+位置,*,,,,point_mm,壁基準と絶対の両方（C-2d）
+芯線,壁,,,,segment_mm,始点と終点（C-2e）
+厚さ,壁,Qto_WallBaseQuantities,Width,,length_mm,
+外部か,壁,Pset_WallCommon,IsExternal,,bool,境界の向かい合う先が外部か、で計算（C-2c）
+耐火,壁,Pset_WallCommon,FireRating,,text,
+壁種,壁,,,,text,鍵。型は relation(型である)
+層の例外,壁,BT_Common,LayerException,,json,実物の採用（E-5、決定 9）
+構成,壁種,BT_Common,Composition,,json,
+断面,柱,,,,text,
+断面,柱の型,,,,text,
+仕上,柱,BT_Common,Finish,,text,表し・被覆
+線分,空間の境界,,,,segment_mm,始点と終点（C-2c）
+仮想の理由,空間の境界,BT_Common,VirtualReason,,text,壁がない／開口が作る
+幅,開口,Qto_OpeningElementBaseQuantities,Width,,length_mm,
+高さ,開口,Qto_OpeningElementBaseQuantities,Height,,length_mm,
+底の高さ,開口,BT_Common,SillHeight,,length_mm,
+開き方,建具,BT_Common,OperationType,,text,
+回路番号,回路,,,Name,text,
+記号,記号の定義,BT_Common,Symbol,,json,ブロック名／ハッチ／文字の形（K）
+意味,記号の定義,BT_Common,Meaning,,json,
+図面の種類,記号の定義,BT_Common,AppliesToDrawing,,text,この凡例が効く図面
