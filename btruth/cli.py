@@ -179,6 +179,7 @@ def cmd_items(args) -> int:
     project, store = _open(args)
     with store:
         interps = store.all("select i.id, i.summary, i.recorded_at, a.name as agent from interpretation i join agent a on a.id=i.agent_id order by i.rowid desc")
+        shown_items: list = []
         for p in interps:
             if args.interpretation and not p["id"].startswith(args.interpretation):
                 continue
@@ -190,6 +191,10 @@ def cmd_items(args) -> int:
             print(f"解釈 {p['id']}  {p['agent']}  {p['summary'] or ''}  {p['recorded_at']}")
             for i in items:
                 print("  " + describe_item(store, project, i))
+            shown_items.extend(items)
+        if shown_items:
+            from btruth.review import items_frame_note
+            print(items_frame_note(store, shown_items))
     return 0
 
 
@@ -201,14 +206,9 @@ def cmd_issues(args) -> int:
         if not issues:
             print("開いている要確認はありません。")
             return 0
-        for i in issues:
-            subjects = "、".join(f"{proposed_kind_of(store, s) or '要素'} 要素 {s} {effective_name(store, project, s) or ''}".rstrip()
-                                 for s in i["subject_ids"])
-            held = "（保留中）" if i["held"] else ""
-            print(f"{i['kind']} [{i['severity']}]{held}  {subjects}")
-            print(f"    要確認 {i['id']}  選択肢: {' / '.join(o['label'] for o in i['options'])}")
-            if i["facts"]:
-                print(f"    事実: {json.dumps(i['facts'], ensure_ascii=False)[:300]}")
+        from btruth.display import issue_lines
+        for line in issue_lines(store, project, issues):
+            print(line)
     return 0
 
 

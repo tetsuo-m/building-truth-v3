@@ -16,6 +16,7 @@ import html
 from pathlib import Path
 
 from btruth.common import dumps, loads, now_iso, sha256_of
+from btruth.display import claim_text, frame_note, frame_of_element, frame_of_version, shift_facts
 from btruth.effective import (effective_name, effective_value, item_status, open_issues, proposed_kind_of, proposed_value,
                               room_area_m2, room_perimeter_m, is_approved_element)
 from btruth.project import ProjectFolder
@@ -71,6 +72,7 @@ def build_show(store: Store, project: ProjectFolder) -> dict:
         data["drawings"].append({"id": v["id"], "label": f"{v['source_name']}@{v['seq']} {v['file_name']}", "clues": items,
                                  "bbox": bbox, "unread": unread})
         data["unread"].append({"version": f"{v['source_name']}@{v['seq']}", "count": len(unread), "clue_ids": unread})
+        data.setdefault("frames", []).append(frame_of_version(store, v["id"]))
     for item in store.all("select i.*, p.summary, a.name as agent from interpretation_item i join interpretation p on p.id=i.interpretation_id "
                           "join agent a on a.id=p.agent_id where i.kind='要素を作る' order by i.rowid"):
         eid = item["element_id"]
@@ -79,8 +81,10 @@ def build_show(store: Store, project: ProjectFolder) -> dict:
         for c in store.all("select id from claim where subject_id=? and interpretation_id=?", eid, item["interpretation_id"]):
             evidence += [e["clue_id"] for e in store.all("select clue_id from claim_evidence where claim_id=?", c["id"])]
         claims = []
-        for c in store.all("select attribute, value_json, mode, confidence from claim where subject_id=? order by rowid", eid):
-            claims.append({"attribute": c["attribute"], "value": c["value_json"], "mode": c["mode"], "confidence": c["confidence"]})
+        for c in store.all("select attribute, value_json, mode, confidence, source_version_id from claim where subject_id=? order by rowid", eid):
+            # shown in the frame of the grid labels of the version it was read from; stored values unchanged
+            claims.append({"attribute": c["attribute"], "value": claim_text(store, c["value_json"], c["source_version_id"]),
+                           "mode": c["mode"], "confidence": c["confidence"]})
         kind = proposed_kind_of(store, eid)
         entry = {"id": eid, "item_id": item["id"], "kind": kind, "name": effective_name(store, project, eid) or _pname(store, eid),
                  "status": status, "confidence": item["confidence"], "reason": item["reason"], "rule_reason": item["rule_check_reason"],
@@ -105,7 +109,8 @@ def build_show(store: Store, project: ProjectFolder) -> dict:
                                "where it.element_id=? and e.clue_id is not null", s):
                 evidence.append(e["clue_id"])
         data["issues"].append({"id": i["id"], "kind": i["kind"], "severity": i["severity"], "subjects": subjects,
-                               "facts": i["facts"], "options": [o["label"] for o in i["options"]], "held": i["held"],
+                               "facts": shift_facts(i["facts"], next((f for f in (frame_of_element(store, x) for x in i["subject_ids"]) if f), None)),
+                               "options": [o["label"] for o in i["options"]], "held": i["held"],
                                "evidence": sorted(set(evidence))})
     return data
 
@@ -195,7 +200,8 @@ def render_show(data: dict) -> str:
              f"<title>{e(p['name'])} — 理解の確認</title>", f"<style>{CSS}</style></head><body>",
              '<div id="left">', f"<h1 style='font-size:17px'>{e(p['name'])} — 理解の確認の画面</h1>",
              f"<p class=note>作成 {e(data['generated_at'])}。要素をクリックすると、根拠の手掛かりが赤く光る。"
-             "橙は、まだどの解釈にも使われていない手掛かり（読み残し）。この画面は何も書き換えない。承認・判断は端末のコマンドで行う。</p>"]
+             "橙は、まだどの解釈にも使われていない手掛かり（読み残し）。この画面は何も書き換えない。承認・判断は端末のコマンドで行う。</p>",
+             f"<p class=note>{e(frame_note(data.get('frames') or []))}</p>"]
     for d in data["drawings"]:
         parts.append(f"<h2>{e(d['label'])}（手掛かり {len(d['clues'])}、読み残し {len(d['unread'])}）</h2>")
         parts.append(_svg(d))

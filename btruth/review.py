@@ -211,20 +211,39 @@ def check_before_approval(store: Store, item_ids: list[str]) -> list[str]:
 
 
 # ---------------------------------------------------------------------- listings
+def _previous_claim(store: Store, item, claim):
+    """The observation that held before this move: the latest approved one of an earlier version of the same
+    source (else the latest proposed one, marked 未承認). Not the effective value — after the batch approval that
+    is already the new position (the person's trial of stage 4)."""
+    from btruth.effective import claim_status
+    new_seq = store.scalar("select seq from source_version where id=?", claim["source_version_id"]) or 0
+    approved = proposed = None
+    for c in store.all("select c.*, v.seq as vseq from claim c left join source_version v on v.id=c.source_version_id "
+                       "where c.subject_id=? and c.attribute=? and c.mode='観測' and c.id<>? order by c.rowid desc",
+                       item["element_id"], claim["attribute"], claim["id"]):
+        if (c["vseq"] or 0) >= new_seq:
+            continue
+        st = claim_status(store, c)
+        if st == STATUS_APPROVED and approved is None:
+            approved = c
+        elif st == STATUS_PENDING and proposed is None:
+            proposed = c
+    return (approved, False) if approved is not None else (proposed, True)
+
+
 def _move_line(store: Store, project: ProjectFolder, item, status: str, basis: str) -> str:
+    from btruth.display import claim_text
     eid = item["element_id"]
     kind = proposed_kind_of(store, eid) or "？"
     name = effective_name(store, project, eid) or _proposed_name(store, eid) or ""
-    c = store.one("select attribute, value_json from claim where id=?", item["claim_id"])
-    now = effective_value(store, project, eid, c["attribute"], through_type=False)
-    if now.present:
-        before = dumps(now.value)
-    else:   # the element itself is not approved yet (Q25): show its proposed value, marked as such
-        prev = store.one("select value_json from claim where subject_id=? and attribute=? and mode='観測' and id<>? "
-                         "and interpretation_id<>? order by rowid desc limit 1", eid, c["attribute"], item["claim_id"],
-                         item["interpretation_id"])
-        before = f"{prev['value_json']}（未承認）" if prev else "（なし）"
-    return (f"[{status}] 移動 {eid}  {kind} {name}  {c['attribute']}: {before} → {c['value_json']}  "
+    c = store.one("select id, attribute, value_json, source_version_id from claim where id=?", item["claim_id"])
+    prev, pending = _previous_claim(store, item, c)
+    if prev is None:
+        before = "（なし）"
+    else:
+        before = claim_text(store, prev["value_json"], prev["source_version_id"]) + ("（未承認）" if pending else "")
+    after = claim_text(store, c["value_json"], c["source_version_id"])
+    return (f"[{status}] 移動 {eid}  {kind} {name}  {c['attribute']}: {before} → {after}  "
             f"{item['reason'] or ''}{basis}").rstrip()
 
 
@@ -252,8 +271,10 @@ def describe_item(store: Store, project: ProjectFolder, item) -> str:
         return (f"[{status}] つながり {item['relation_id']}  {r['kind']}  {proposed_kind_of(store, r['from_element_id']) or '?'} "
                 f"{(r['from_element_id'] or '')[:8]} → {proposed_kind_of(store, r['to_element_id']) or '?'} {(r['to_element_id'] or '')[:8]}{conf}")
     if item["claim_id"]:
-        c = store.one("select subject_id, attribute, value_json from claim where id=?", item["claim_id"])
-        return f"[{status}] 言い分 {item['claim_id']}  {proposed_kind_of(store, c['subject_id']) or '?'} {c['subject_id'][:8]} {c['attribute']}={c['value_json']}{conf}{basis}"
+        from btruth.display import claim_text
+        c = store.one("select subject_id, attribute, value_json, source_version_id from claim where id=?", item["claim_id"])
+        shown = claim_text(store, c["value_json"], c["source_version_id"])
+        return f"[{status}] 言い分 {item['claim_id']}  {proposed_kind_of(store, c['subject_id']) or '?'} {c['subject_id'][:8]} {c['attribute']}={shown}{conf}{basis}"
     if item["assumption_id"]:
         a = store.one("select level, kind, value_json from assumption where id=?", item["assumption_id"])
         return f"[{status}] 前提 {item['assumption_id']}  段 {a['level']} {a['kind']}={a['value_json']}{conf}{basis}"
@@ -268,9 +289,25 @@ def _proposed_name(store: Store, eid: str) -> str | None:
     return None
 
 
+def items_frame_note(store: Store, items) -> str:
+    from btruth.display import frame_note, frame_of_version
+    vids = set()
+    for i in items:
+        for r in store.all("select distinct c.source_version_id from interpretation_evidence e join clue c on c.id=e.clue_id "
+                           "where e.item_id=?", i["id"]):
+            vids.add(r["source_version_id"])
+        if i["kind"] == MOVE_ITEM_KIND and i["claim_id"]:          # the "before" value comes from an earlier version
+            c = store.one("select id, attribute, value_json, source_version_id from claim where id=?", i["claim_id"])
+            prev, _ = _previous_claim(store, i, c)
+            if prev is not None and prev["source_version_id"]:
+                vids.add(prev["source_version_id"])
+    return frame_note([frame_of_version(store, v) for v in sorted(vids)])
+
+
 def listing(store: Store, project: ProjectFolder, items, title: str) -> str:
     lines = [title, f"（{len(items)} 件。一覧を確かめてから y/N を答えてください）"]
     lines += ["  " + describe_item(store, project, i) for i in items]
+    lines.append(items_frame_note(store, items))
     return "\n".join(lines)
 
 
@@ -476,49 +513,81 @@ def _has_adopted(store: Store, element_id: str, attribute: str) -> bool:
     return bool(store.one("select 1 from claim where subject_id=? and attribute=? and mode='採用'", element_id, attribute))
 
 
-def moves_listing_items(store: Store, project: ProjectFolder, run_id: str) -> list:
-    """The items the batch approval lists by default: the run's moves (意味の変更なし) still waiting, minus the
-    elements that carry a judgement on the moved attribute (those get a recheck mark and are looked at one by one)."""
+def classify_moves(store: Store, project: ProjectFolder, run_id: str) -> dict[str, list]:
+    """The run's moves by what the batch approval can do with them:
+    listable (pending, element approved, no judgement on the moved attribute), approved (すでに承認済み),
+    waiting (元の要素が未承認), judged (判断が付いていて一つずつ), settled (却下・保留), other (not a 移動 link)."""
     run = store.one("select interpretation_id from identity_run where id=?", run_id)
-    out = []
+    out: dict[str, list] = {k: [] for k in ("listable", "approved", "waiting", "judged", "settled", "other")}
     for i in store.all("select * from interpretation_item where interpretation_id=? and kind=? order by rowid",
                        run["interpretation_id"], MOVE_ITEM_KIND):
-        if item_status(store, i["id"]) != STATUS_PENDING:
-            continue
+        st = item_status(store, i["id"])
         link = store.one("select verdict from identity_link where run_id=? and element_id=?", run_id, i["element_id"])
-        if not link or link["verdict"] != "移動":
-            continue
         attribute = store.scalar("select attribute from claim where id=?", i["claim_id"])
-        if _has_adopted(store, i["element_id"], attribute):
-            continue
-        out.append(i)
+        if st == STATUS_APPROVED:
+            out["approved"].append(i)
+        elif st != STATUS_PENDING:
+            out["settled"].append(i)
+        elif not link or link["verdict"] != "移動":
+            out["other"].append(i)
+        elif _has_adopted(store, i["element_id"], attribute):
+            out["judged"].append(i)
+        elif element_status(store, i["element_id"]) not in (STATUS_APPROVED, STATUS_DEFAULT):
+            out["waiting"].append(i)
+        else:
+            out["listable"].append(i)
+    return out
+
+
+def moves_listing_items(store: Store, project: ProjectFolder, run_id: str) -> list:
+    """The items the batch approval lists by default (決定 Q15)."""
+    return classify_moves(store, project, run_id)["listable"]
+
+
+def _moves_reasons(store: Store, project: ProjectFolder, groups: dict, excluded_ids: set) -> list[str]:
+    def names(items):
+        return "\n".join("    " + describe_item(store, project, i) for i in items)
+    out = []
+    if groups["approved"]:
+        out.append(f"すでに承認済み {len(groups['approved'])} 件")
+    if groups["waiting"]:
+        out.append(f"元の要素が未承認（まだ承認されていない）なので待っている {len(groups['waiting'])} 件。先に元の解釈を承認する"
+                   f"（決定 12）：\n{names(groups['waiting'])}")
+    if groups["judged"]:
+        out.append(f"判断が付いていて一つずつの承認になる {len(groups['judged'])} 件（再確認の印。`btruth rechecks`、"
+                   f"`btruth approve --item`）：\n{names(groups['judged'])}")
+    if groups["settled"]:
+        out.append(f"却下・保留にした {len(groups['settled'])} 件")
+    excluded = [i for i in groups["listable"] if i["id"] in excluded_ids]
+    if excluded:
+        out.append(f"--exclude で外した {len(excluded)} 件")
+    if not any(groups[k] for k in ("approved", "waiting", "judged", "settled", "listable", "other")):
+        out.append("この同定には移動がない（移動の観測の item は 0 件）")
     return out
 
 
 def approve_moves(store: Store, project: ProjectFolder, run_id: str, reason: str | None, reviewed_by: str,
                   exclude: list[str] = (), confirm: Callable[[str], bool] | None = None) -> str | None:
-    """review(target_kind=identity_run, action=移動をまとめて承認, choice_json={item_ids}) — one row (G-1)."""
+    """review(target_kind=identity_run, action=移動をまとめて承認, choice_json={item_ids}) — one row (G-1).
+    Moves that cannot go into the batch are named with the reason; when none can, nothing is written and the
+    reasons are given (ApprovalBlocked). The 移動の承認待ち issue of the run is closed with a record when all its
+    moves are settled."""
     require_terminal(project.db_path)
     rid_run = _resolve_run(store, run_id)
     excluded = set()
     for x in exclude:
         excluded |= {r["id"] for r in store.all("select id from interpretation_item where id like ?", x + "%")}
-    listed = moves_listing_items(store, project, rid_run)
-    items = [i for i in listed if i["id"] not in excluded]
+    groups = classify_moves(store, project, rid_run)
+    items = [i for i in groups["listable"] if i["id"] not in excluded]
+    reasons = _moves_reasons(store, project, groups, excluded)
     if not items:
-        raise ValueError("まとめて承認できる移動がありません")
+        raise ApprovalBlocked("まとめて承認できる移動がありません：\n  " + "\n  ".join(reasons))
     problems = check_before_approval(store, [i["id"] for i in items])
     if problems:
         raise ApprovalBlocked("承認を止めました：\n  " + "\n  ".join(problems))
-    run = store.one("select interpretation_id from identity_run where id=?", rid_run)
-    chosen = {x["id"] for x in items}
-    outside = [i for i in store.all("select * from interpretation_item where interpretation_id=? and kind=? order by rowid",
-                                    run["interpretation_id"], MOVE_ITEM_KIND)
-               if i["id"] not in chosen and item_status(store, i["id"]) == STATUS_PENDING]
     text = listing(store, project, items, f"同定 {rid_run} の移動（意味の変更なし）をまとめて承認する一覧")
-    if outside:
-        text += "\n一覧に入れなかったもの（判断が付いている、または外した。一つずつ見る）：\n" + "\n".join(
-            "  " + describe_item(store, project, i) for i in outside)
+    if reasons:
+        text += "\n一覧に入れなかったもの：\n  " + "\n  ".join(reasons)
     confirm = confirm or _confirm_default(project.db_path)
     if not confirm(text):
         return None
@@ -529,6 +598,12 @@ def approve_moves(store: Store, project: ProjectFolder, run_id: str, reason: str
         for i in items:
             premises |= _item_premises(store, i)
         _write_premises(store, rid, premises, reviewed_by)
+        for iss in store.all("select id, facts_json from issue where identity_run_id=? and kind='移動の承認待ち'", rid_run):
+            ids = (loads(iss["facts_json"]) or {}).get("item_ids") or []
+            if all(item_status(store, x) in (STATUS_APPROVED, STATUS_REJECTED) for x in ids):
+                crid = _write_review(store, "issue", iss["id"], "閉じる", {"review_id": rid, "note": "移動がすべて承認・却下された"},
+                                     reason, reviewed_by)
+                _write_premises(store, crid, {("issue", iss["id"])}, reviewed_by)
         store.commit()
     except Exception:
         store.conn.rollback()

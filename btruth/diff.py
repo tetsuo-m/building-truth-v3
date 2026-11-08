@@ -31,16 +31,39 @@ def build_diff(store: Store, project: ProjectFolder, run_id: str) -> dict:
     for l in store.all("select * from identity_link where run_id=? order by rowid", run_id):
         eid = l["element_id"]
         facts = loads(l["facts_json"]) or {}
-        item = store.one("select id from interpretation_item where interpretation_id=? and element_id=?", run["interpretation_id"], eid)
-        links.append({"element_id": eid, "kind": proposed_kind_of(store, eid) or "？",
+        item = store.one("select * from interpretation_item where interpretation_id=? and element_id=?", run["interpretation_id"], eid)
+        change = None
+        if item and item["claim_id"]:
+            from btruth.display import claim_text
+            from btruth.review import _previous_claim
+            c = store.one("select id, attribute, value_json, source_version_id from claim where id=?", item["claim_id"])
+            prev, pending = _previous_claim(store, item, c)
+            change = {"attribute": c["attribute"],
+                      "before": (claim_text(store, prev["value_json"], prev["source_version_id"]) + ("（未承認）" if pending else ""))
+                      if prev else "（なし）",
+                      "after": claim_text(store, c["value_json"], c["source_version_id"])}
+        links.append({"change": change, "element_id": eid, "kind": proposed_kind_of(store, eid) or "？",
                       "name": effective_name(store, project, eid) or "", "verdict": l["verdict"], "reason": l["reason"] or "",
                       "move_mm": facts.get("移動量_mm"), "item_id": item["id"] if item else None,
                       "item_status": item_status(store, item["id"]) if item else None,
                       "candidates": loads(l["candidates_json"]), "basis": loads(l["basis_json"]) or {}})
     marks = [dict(m) for m in store.all("select id, review_id, reason, detail_json from recheck_mark where caused_by_id=? order by rowid",
                                         run_id)]
-    issues = [{"id": i["id"], "kind": i["kind"], "severity": i["severity"], "subjects": loads(i["subject_ids_json"]) or []}
-              for i in store.all("select * from issue where identity_run_id=? order by rowid", run_id)]
+    from btruth.effective import open_issues
+    open_ids = {i["id"] for i in open_issues(store, project)}
+    issues = []
+    for i in store.all("select * from issue where identity_run_id=? order by rowid", run_id):
+        if i["id"] in open_ids:
+            state = "開いている"
+        else:
+            r = store.one("select id, action, recorded_at from review where target_kind='issue' and target_id=? and action<>'保留' "
+                          "order by rowid desc limit 1", i["id"])
+            state = (f"閉じた（{r['action']}、review {r['id'][:8]}、{r['recorded_at']}）" if r
+                     else "閉じた（条件がなくなった：移動がすべて承認・却下された、など。閉じた記録の行はない）")
+        issues.append({"id": i["id"], "kind": i["kind"], "severity": i["severity"], "subjects": loads(i["subject_ids_json"]) or [],
+                       "state": state})
+    from btruth.display import frame_note, frame_of_version
+    frames = [frame_of_version(store, run["base_source_version_id"]), frame_of_version(store, run["new_source_version_id"])]
     impact = [dict(r) for r in store.all("select element_id, reason, action, depth from impact where run_id=? order by rowid", run_id)]
     return {"run_id": run_id, "generated_at": now_iso(), "base": _version_name(store, run["base_source_version_id"]),
             "new": _version_name(store, run["new_source_version_id"]), "frame": loads(run["frame_json"]) or {},
@@ -48,7 +71,8 @@ def build_diff(store: Store, project: ProjectFolder, run_id: str) -> dict:
                     {"anchors": len(mesh.get("anchors") or []), "moved": len(mesh.get("moved") or []),
                      "edges_split": len(mesh.get("edges_split") or []),
                      "faces": [f.get("verdict") for f in mesh.get("faces") or []]},
-            "counts": counts, "links": links, "recheck_marks": marks, "issues": issues, "impact": impact}
+            "counts": counts, "links": links, "recheck_marks": marks, "issues": issues, "impact": impact,
+            "frame_note": frame_note(frames)}
 
 
 def render_text(d: dict) -> str:
@@ -71,6 +95,9 @@ def render_text(d: dict) -> str:
             mv = f"  移動 {l['move_mm']:.1f} mm" if l["move_mm"] is not None else ""
             st = f"  [{l['item_status']}] item {l['item_id']}" if l["item_id"] else ""
             lines.append(f"  {l['kind']} {l['name']} {l['element_id']}{mv}  {l['reason']}{st}")
+            if l.get("change"):
+                ch = l["change"]
+                lines.append(f"      {ch['attribute']}: {ch['before']} → {ch['after']}")
     same = [l for l in d["links"] if l["verdict"] == "一致"]
     if same:
         lines += ["", f"一致: {len(same)} 件（" + "、".join(sorted({l['kind'] for l in same})) + "）"]
@@ -79,7 +106,8 @@ def render_text(d: dict) -> str:
         lines += [f"  印 {m['id']}  判断 {m['review_id']}  {m['reason']}" for m in d["recheck_marks"]]
     if d["issues"]:
         lines += ["", "要確認:"]
-        lines += [f"  {i['kind']} [{i['severity']}]  {i['id']}  対象 {len(i['subjects'])}" for i in d["issues"]]
+        lines += [f"  {i['kind']} [{i['severity']}]  {i['id']}  対象 {len(i['subjects'])}  {i['state']}" for i in d["issues"]]
+    lines += ["", d["frame_note"]]
     return "\n".join(lines)
 
 
@@ -88,14 +116,18 @@ def render_html(d: dict) -> str:
     def mm(v):
         return "" if v is None else f"{v:.1f}"
 
+    def ch(l):
+        c = l.get("change")
+        return "" if not c else f"{c['attribute']}: {c['before']} → {c['after']}"
+
     rows = "".join(f"<tr class='v-{e(l['verdict'])}'><td>{e(l['verdict'])}</td><td>{e(l['kind'])}</td><td>{e(l['name'])}</td>"
-                   f"<td><code>{e(l['element_id'])}</code></td><td>{mm(l['move_mm'])}</td>"
+                   f"<td><code>{e(l['element_id'])}</code></td><td>{mm(l['move_mm'])}</td><td>{e(ch(l))}</td>"
                    f"<td>{e(l['reason'])}</td><td>{e(l['item_status'] or '')}</td></tr>" for l in d["links"])
     return ("<!DOCTYPE html><html lang='ja'><head><meta charset='utf-8'><title>差分のレポート</title>"
             "<style>body{font-family:sans-serif;margin:1.5rem}table{border-collapse:collapse}td,th{border:1px solid #ccc;"
             "padding:.2rem .5rem}.v-移動{background:#fff6d6}.v-判断できない,.v-消えた,.v-意味が変わった{background:#fde2e2}</style>"
             f"</head><body><h1>差分のレポート</h1><pre>{e(render_text(d))}</pre>"
-            "<table><tr><th>結果</th><th>種類</th><th>名前</th><th>要素</th><th>移動 mm</th><th>理由</th><th>承認</th></tr>"
+            "<table><tr><th>結果</th><th>種類</th><th>名前</th><th>要素</th><th>移動 mm</th><th>前 → 後</th><th>理由</th><th>承認</th></tr>"
             f"{rows}</table></body></html>")
 
 
