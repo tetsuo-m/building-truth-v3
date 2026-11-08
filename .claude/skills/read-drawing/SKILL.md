@@ -3,7 +3,7 @@ name: read-drawing
 description: Claude Code が図面（DXF の手掛かり）と表を読み、建物の要素として解釈し、提案の JSON を書いて btruth に登録する手順。承認はしない。図面を読んで提案を作るとき、`btruth propose` を使うとき、「この図面を読んで」と頼まれたときに使う。
 ---
 
-# 図面を読んで提案を書く（第3段の手順書）
+# 図面を読んで提案を書く（第3段・第4段の手順書）
 
 前提は `CONCEPT.md`（人だけが直す）。器と流れの仕様は設計書 `DESIGN_STORE.md`。ここでは中身を書き写さず、項目の番号で指す。
 この手順書の sha256 を、提案を登録するときに `--instructions` で渡す（`agent.instructions_sha256` に残る。D-6）。
@@ -86,4 +86,10 @@ python -m btruth issues <物件のフォルダ>
 ```
 
 - ここで止まる。**承認・却下・判断・名前を付ける・部屋として扱わない は人が端末で打つ**（`btruth approve --interpretation <解釈の ID>` など。一覧を見てから y/N）。Claude Code が打とうとするとフックで止まる。止まらなかったら、その環境では守りが効いていないので、人に知らせて作業をやめる（F-11、F-12）。
-- 読みの正しさを測るときは、固定の解釈（`tests/fixtures/*_fixed.json`）も登録し、`python -m btruth measure <物件のフォルダ> --interpretation <AI の解釈> --against <固定の解釈>` で `run_summary` に数を残す（合否は付けない。D-9）。
+- **読みの正しさの測定（D-9）は、人が別のセッションで行う**（`docs/MEASURE.md`）。読む側は、固定の解釈（`tests/fixtures/`）・期待値の文書（`samples/*/expected*.md`）・テストを**読まない**。答えを知った後に読んだ数字は測定にならない（第3段で起きた。第4段の依頼書 §1-2）。測定の場所（`btruth kit` が作るフォルダ）には手掛かりの JSON とこの手順書しかなく、そこでは `btruth` を使わず、`clues/` の JSON を読んで `proposal.json` を書いて止まる。登録・固定の解釈との照らし（`btruth measure`）は人が行う。
+
+## 5. 版が変わったとき（第4段）
+
+- 新しい版を取り込んだら、まず `python -m btruth identify <物件のフォルダ> <出どころ>@<前の版> <出どころ>@<新しい版>` で同定する（AI を使わない計算。承認はしない）。変わっていない所は読み直さない（B-5 の補足）。
+- 読み直すのは、同定が AI に渡す範囲（`intake_log` の「AI に渡す範囲」：判断できない・消えた・意味が変わった要素の根拠と、追加の候補の手掛かり。余白 `reread_margin_mm`）だけ。範囲の縁に触れる要素（文脈の要素）は作り直さず `{"id": …}` で指す（案4）。
+- 「移動（意味の変更なし）」の新しい位置は、同定が承認待ちの item にしてある。**まとめての承認（`btruth approve-moves`）と再確認の印の解消（`btruth resolve-recheck`）は人が端末で打つ**。Claude Code はフックで止まる。

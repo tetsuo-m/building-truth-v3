@@ -191,3 +191,74 @@ def rect_room(ref: str, x0, y0, x1, y1, rb_refs: list[str], partners: list | Non
         if partners and partners[i]:
             rels.append(relation(f"{bref}_partner", "境界の相手", bref, partners[i]))
     return els, rels
+
+
+# ---------------------------------------------------------------- stage 4: fictional versions of the step2 plan
+JW_ORIGIN = (210000000.0, 148500000.0)        # samples/step2/*.dxf keep Jw_cad's coordinates
+
+
+def step2_like_dxf(path: Path, wc_x: float = 2300, rb_x: float | None = None, extra=(), door: bool = False,
+                   door_dx: float = 0.0, dx: float = 0.0, dy: float = 0.0, door_name: str = "DOOR_S",
+                   door_tag: str = "AD-1") -> Path:
+    """A fictional plan with the same first 23 entities (and order) as samples/step2/step2.dxf, at origin (dx, dy).
+    `wc_x` is the partition's wall centre, `rb_x` its room boundary (default: the same). With `door`, an INSERT
+    (seq 24) and its tag text (seq 25) sit on the partition at y 1100 (wall-based position 1100 from (x, 0));
+    `door_dx` shifts them in x independently of the wall."""
+    rb_x = wc_x if rb_x is None else rb_x
+
+    def p(x, y):
+        return (x + dx, y + dy)
+
+    ents = []
+    for label, a, b, c in (("X1", (0, -1500), (0, 5500), (0, 5900)), ("X2", (6000, -1500), (6000, 5500), (6000, 5900)),
+                           ("Y1", (-1500, 0), (7500, 0), (-1900, 0)), ("Y2", (-1500, 4000), (7500, 4000), (-1900, 4000))):
+        ents += [("LINE", "_0-2_GRID", {"start": p(*a), "end": p(*b)}),
+                 ("CIRCLE", "_0-2_GRID", {"center": p(*c), "radius": 300}),
+                 ("TEXT", "_0-2_GRID", {"text": label, "insert": p(*c)})]
+    for a, b in (((0, 0), (6000, 0)), ((6000, 0), (6000, 4000)), ((6000, 4000), (0, 4000)), ((0, 4000), (0, 0))):
+        ents += [("LINE", "_0-3_ROOM_BOUNDARY", {"start": p(*a), "end": p(*b)}),
+                 ("LINE", "_0-5_WALL_CENTER", {"start": p(*a), "end": p(*b)})]
+    ents.append(("TEXT", "_0-4_ROOM_NAME", {"text": "101 事務室", "insert": p(3000, 2000), "height": 350}))
+    ents.append(("LINE", "_0-3_ROOM_BOUNDARY", {"start": p(rb_x, 4000), "end": p(rb_x, 0)}))
+    ents.append(("LINE", "_0-5_WALL_CENTER", {"start": p(wc_x, 4000), "end": p(wc_x, 0)}))
+    if door:
+        ents.append(("INSERT", "_0-6_DOOR", {"name": door_name, "insert": p(wc_x + door_dx, 1100)}))
+        ents.append(("TEXT", "_0-6_DOOR", {"text": door_tag, "insert": p(wc_x + door_dx + 150, 1500)}))
+    ents += list(extra)
+    return write_dxf(path, ents, layers=["_0-2_GRID", "_0-3_ROOM_BOUNDARY", "_0-4_ROOM_NAME", "_0-5_WALL_CENTER", "_0-6_DOOR"])
+
+
+def _shift_values(obj, dx: float, dy: float):
+    if isinstance(obj, dict):
+        out = {}
+        for k, v in obj.items():
+            if k == "claims":
+                out[k] = [dict(c, value=_shift_points(c["value"], dx, dy)) if c.get("attribute") in ("線分", "芯線") else c
+                          for c in v]
+            else:
+                out[k] = _shift_values(v, dx, dy)
+        return out
+    if isinstance(obj, list):
+        return [_shift_values(x, dx, dy) for x in obj]
+    return obj
+
+
+def _shift_points(value, dx, dy):
+    return [[p[0] + dx, p[1] + dy] + list(p[2:]) for p in value]
+
+
+def step2_fixture_at(dx: float = 0.0, dy: float = 0.0, door: bool = False) -> dict:
+    """The fixed interpretation of step2, moved from Jw_cad's origin to (dx, dy); with `door`, an opening that
+    voids the partition (wall-based 1100, width 800) and a door AD-1 that fills it (clues 24, 25)."""
+    d = _shift_values(fixture("step2_fixed"), dx - JW_ORIGIN[0], dy - JW_ORIGIN[1])
+    if door:
+        d["elements"] += [
+            element("opening_A", "開口", [claim("位置", 1100, [ev("平面図@1#24")], "mm"), claim("幅", 800, [ev("平面図@1#24")], "mm")],
+                    [ev("平面図@1#24")]),
+            element("door_A", "建具", [claim("符号", "AD-1", [ev("平面図@1#25")]), claim("建具の種類", "扉", [ev("平面図@1#24")])],
+                    [ev("平面図@1#24"), ev("平面図@1#25")]),
+        ]
+        d["relations"] += [relation("opening_A_voids", "くり抜く", "opening_A", "wall_A", {"位置": 1100}),
+                           relation("door_A_fills", "ふさぐ", "door_A", "opening_A"),
+                           relation("door_A_in", "含む", "door_A", STOREY)]
+    return d

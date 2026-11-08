@@ -12,3 +12,5 @@
 | 2026-11-08（第3段） | `tests/test_cli.py::test_a_terminal_only_subcommand_does_not_exist_yet` → `test_the_confirmation_subcommands_exist_and_say_they_are_terminal_only` | 「approve / decide / reject が無い」の確かめを、「六つの確定のコマンドがあり、help に端末からだけ動くと書いてある」に替えた | 第3段で確定のコマンドを作った（依頼書 §3-3） |
 | 2026-11-08（第3段） | `tests/test_guard_confirm.py` | v2 の形のコマンド例（`--db out/a.sqlite` など）を、v3 の形（物件のフォルダを渡す）に書き直した。許す例から DB のファイル名を含むものを外した。新しい確定のコマンド名、DB のファイル・sqlite3 を名指すコマンド、DB のファイルへの Edit・Write が止まることを足した | G-1 (a)：DB のファイル名を含むコマンドは今は止める対象。btruth は DB のファイル名を受け取らない（第2段の決定） |
 | 2026-11-08（第3段） | `tests/conftest.py`、`tests/helpers.py` | 端末の差し替えのフィクスチャ（`terminal_ok`、`no_terminal`）と、提案を組むヘルパを足した。既存のヘルパは変えていない | 第3段のテストのため |
+| 2026-11-08（第4段） | `tests/test_guard_confirm.py` | 止める例に `approve-moves`・`resolve-recheck`（コマンド、`python -c` からの呼び出し、API の呼び出し）を足した。二つが `CONFIRM` と deny の一覧にあることを確かめるテストを足した | 第4段で確定のコマンドを二つ作った（依頼書 §2-3、§2-5） |
+| 2026-11-08（第4段） | `tests/helpers.py` | `step2_like_dxf`（step2 と同じ並びの架空の図面。間仕切・部屋割り線・扉の位置と原点を変えられる）と `step2_fixture_at`（固定の解釈を原点に合わせ、開口と扉を足す）を足した。既存のヘルパは変えていない | 第4段のテストのため |

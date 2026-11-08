@@ -10,5 +10,6 @@
 
 - 標準ライブラリで済ませたもの：SQLite（`sqlite3`）、CSV（`csv`）、JSON（`json`）、ハッシュ（`hashlib`）、UUID（`uuid`）、コマンド（`argparse`）。
 - 第3段（2026-11-08）で足したライブラリはない。理解の確認の画面（HTML＋SVG＋少しの JavaScript）、幾何の計算、端末の判定（`sys`・`os`・`tempfile`）も標準ライブラリだけ。
+- 第4段（2026-11-08）で足したライブラリはない。節点の網の目・面の対応・差分のレポートも標準ライブラリだけ。
 - フック（`.claude/hooks/*.py`）は標準ライブラリだけで動く（venv なしで Windows でも動かすため）。
 - 入れる手順：`python -m venv .venv` → `.venv\Scripts\python -m pip install -e .[dev]`（または `pip install ezdxf pytest`）。

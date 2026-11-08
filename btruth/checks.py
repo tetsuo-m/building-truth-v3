@@ -17,7 +17,7 @@ Intervals are computed, never stored (C-2c).
 from __future__ import annotations
 
 from btruth import geometry
-from btruth.common import dumps
+from btruth.common import dumps, loads
 from btruth.effective import (effective_value, proposed_value, relations_from, relations_to, _kind_of,
                               proposed_kind_of, relation_status, NAME_ATTRIBUTES)
 from btruth.project import ProjectFolder
@@ -34,6 +34,9 @@ OPTIONS = {
                  ("extend", "壁を延ばす（図面の修正案）", {}), ("opening", "開口として扱う（建具表に足す）", {})],
     "建具表にない符号": [("add", "建具表に足す", {}), ("fix", "図面の符号を直す（修正案）", {})],
     "知らない名前": [("add_row", "一覧の CSV に行を足す", {}), ("fix", "提案の名前を直す", {})],
+    "壁と境界のずれ": [("follow", "境界線に合わせる", {"claim": {"attribute": "芯線", "mode": "採用"},
+                                              "proposal": "図面の修正案：壁芯線を境界線へ"}),
+                  ("unfollow", "追従を外す", {"assumption": {"level": 3, "kind": "壁芯は部屋割り線に従う", "value": "従わない"}})],
 }
 
 
@@ -205,3 +208,77 @@ def check_proposal(store: Store, project: ProjectFolder, interpretation_id: str,
 
     store.insert("run_summary", recorded_by, kind="提案の照らし", counts_json=dumps({"check_run_id": run_id, "issues": len(issues)}))
     return run_id, issues
+
+
+# ---------------------------------------------------------------------- stage 4: after the batch approval of moves (例1)
+FOLLOW_KIND = "壁芯は部屋割り線に従う"
+
+
+def _follow_in_force(store: Store) -> bool:
+    """An approved assumption 壁芯は部屋割り線に従う = 従う, not overridden by a later approved 従わない (level 3).
+    (The scope of a level-3 exception is read in stage 5; here any approved 従わない on the wall stops the check.)"""
+    from btruth.effective import item_status
+    found = False
+    for a in store.all("select a.id, a.value_json from assumption a where a.kind=? order by a.rowid", FOLLOW_KIND):
+        item = store.one("select id from interpretation_item where assumption_id=?", a["id"])
+        if item and item_status(store, item["id"]) == "承認済み":
+            found = loads(a["value_json"]) == "従う"
+    return found
+
+
+def check_after_moves(store: Store, project: ProjectFolder, run_id: str | None, recorded_by: str) -> tuple[str, list[str]]:
+    """The check that runs after moves are approved (design 例1, C-8: reads only, writes a check_run and issues).
+    For each approved wall whose partner boundaries lie on a parallel line at another place, one issue
+    壁と境界のずれ (one per wall, not one per boundary: expected_diff.md), with the two options. The expected
+    position is not stored (B-9, B-10); only the offset goes to facts."""
+    from btruth.effective import approved_elements_by_kind, effective_value, open_issues, relations_to
+    rules = effective_rules(store, project)
+    tol = float(rules.get("same_position_mm", "0.1"))
+    tol_deg = float(rules.get("same_angle_deg", "0.01"))
+    run = store.insert("check_run", recorded_by, trigger="移動の承認の後", scope_json=dumps({"identity_run_id": run_id}),
+                       authority_table_load_id=latest_load_id(store, "authority", "物件"),
+                       rank_table_load_id=latest_load_id(store, "document_rank", "物件"),
+                       rules_table_load_id=latest_load_id(store, "rules", "物件"), counts_json=None)
+    issues: list[str] = []
+    if not _follow_in_force(store):
+        store.insert("run_summary", recorded_by, kind="移動の承認の後の照らし",
+                     counts_json=dumps({"check_run_id": run, "issues": 0, "note": "壁芯は部屋割り線に従う、の前提が承認されていない"}))
+        store.commit()
+        return run, issues
+    already = {(i["kind"], frozenset(i["subject_ids"])) for i in open_issues(store, project)}
+    import math
+    for wall in approved_elements_by_kind(store, project).get("壁", []):
+        w = effective_value(store, project, wall, "芯線")
+        ws = geometry.segment(w.value) if w.present else None
+        if ws is None:
+            continue
+        off = []
+        for r in relations_to(store, wall, "境界の相手"):
+            b = effective_value(store, project, r["from_element_id"], "線分")
+            bs = geometry.segment(b.value) if b.present else None
+            if bs is None:
+                continue
+            ang = lambda s: math.degrees(math.atan2(s[1][1] - s[0][1], s[1][0] - s[0][0])) % 180.0
+            d_ang = abs((ang(ws) - ang(bs) + 90.0) % 180.0 - 90.0)
+            if d_ang > tol_deg:
+                continue
+            d0, d1 = geometry.distance_to_line(ws, bs[0]), geometry.distance_to_line(ws, bs[1])
+            if min(d0, d1) > tol:
+                off.append((r["from_element_id"], max(d0, d1)))
+        if not off:
+            continue
+        subjects = [wall] + [b for b, _ in off]
+        if ("壁と境界のずれ", frozenset(subjects)) in already:
+            continue
+        iid = store.insert("issue", recorded_by, check_run_id=run, identity_run_id=run_id, condition_check_id=None,
+                           kind="壁と境界のずれ", severity=_severity(rules, "壁と境界のずれ"), subject_ids_json=dumps(subjects),
+                           basis_json=dumps({"前提": FOLLOW_KIND, "壁の芯線": w.value, "claim_id": w.claim_id}),
+                           facts_json=dumps({"ずれ_mm": max(d for _, d in off), "境界ごと": [[b, d] for b, d in off],
+                                             "note": "期待の位置は保存しない（B-9、B-10）。壁の採用は書かない"}),
+                           proposal_json=dumps({"kind": "図面の修正案", "text": "壁芯線を境界線の位置へ（「境界線に合わせる」を選んだとき）"}))
+        for code, label, effect in OPTIONS["壁と境界のずれ"]:
+            store.insert("issue_option", recorded_by, issue_id=iid, code=code, label=label, effect_json=dumps(effect))
+        issues.append(iid)
+    store.insert("run_summary", recorded_by, kind="移動の承認の後の照らし", counts_json=dumps({"check_run_id": run, "issues": len(issues)}))
+    store.commit()
+    return run, issues

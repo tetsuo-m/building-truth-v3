@@ -261,6 +261,8 @@ def _default_observation(store: Store, subject_id: str, attribute: str) -> Effec
 
 
 def _adopted(store: Store, subject_id: str, attribute: str) -> EffectiveValue | None:
+    """The latest adopted claim. A recheck mark keeps it (recheck=True, 決定 9). When the person resolves a mark
+    on it with 取り消す, the adoption ends (G-2) and nothing older is revived."""
     c = store.one("select * from claim where subject_id=? and attribute=? and mode='採用' order by rowid desc limit 1",
                   subject_id, attribute)
     if c is None:
@@ -268,9 +270,12 @@ def _adopted(store: Store, subject_id: str, attribute: str) -> EffectiveValue | 
     recheck = False
     if c["review_id"]:
         for m in store.all("select id from recheck_mark where review_id=?", c["review_id"]):
-            resolved = store.one("select 1 from review where target_kind='recheck_mark' and target_id=?", m["id"])
+            resolved = store.one("select action from review where target_kind='recheck_mark' and target_id=? order by rowid desc limit 1",
+                                 m["id"])
             if not resolved:
                 recheck = True
+            elif resolved["action"] == "取り消す":
+                return None
     return EffectiveValue(loads(c["value_json"]), "採用", c["id"], c["review_id"], recheck)
 
 
@@ -397,6 +402,9 @@ def _issue_condition_gone(store: Store, project: ProjectFolder, issue_row, subje
     """An issue whose condition no longer holds in the effective state is not open any more (決定 15: the
     issue is a record of its time; what is open is read against the current state). Stage 3 knows this
     for 名前がない空間: the room has an effective name, or is excluded (部屋として扱う = false)."""
+    if issue_row["kind"] == "移動の承認待ち":
+        ids = (loads(issue_row["facts_json"]) or {}).get("item_ids") or []
+        return all(item_status(store, i) != STATUS_PENDING for i in ids)
     if issue_row["kind"] == "名前がない空間":
         for s in subjects:
             if effective_name(store, project, s):

@@ -25,8 +25,9 @@ from pathlib import Path
 from typing import Callable
 
 from btruth.common import dumps, loads, new_id, now_iso
-from btruth.effective import (STATUS_APPROVED, STATUS_DEFAULT, STATUS_REJECTED, STATUS_RULE_REJECTED, element_status,
-                              item_status, proposed_kind_of, effective_name, proposed_value, relation_status)
+from btruth.effective import (STATUS_APPROVED, STATUS_DEFAULT, STATUS_PENDING, STATUS_REJECTED, STATUS_RULE_REJECTED,
+                              effective_value, element_status, item_status, proposed_kind_of, effective_name, proposed_value,
+                              relation_status)
 from btruth.project import ProjectFolder
 from btruth.store import Store
 from btruth.tables import TABLE_KINDS, latest_load_id
@@ -36,6 +37,8 @@ OVERRIDE_ENV = "BTRUTH_TEST_TERMINAL"
 # relations whose *target* must be approved before (or with) the source element (決定 12)
 POINTING = {"ふさぐ", "くり抜く", "区切る", "境界の相手", "型である", "集める", "含む", "組み立てを持つ", "使う",
             "部品である", "属する", "載る", "貫通する", "参照する", "定義する", "層である"}
+MOVE_ITEM_KIND = "既存の要素と同じ"           # an identity run's new position of an existing element (H-2)
+RECHECK_CHOICES = ("保つ", "変える", "取り消す")   # G-2
 TERMINAL_MESSAGE = ("承認・判断のコマンドは、人が打つ端末からだけ動きます（G-1 (b)）。この呼び出しは端末ではない"
                     "（stdin・stdout・stderr のどれかが端末でない、または AI エージェントの環境）ので、何も書きません。")
 
@@ -164,7 +167,7 @@ def check_before_approval(store: Store, item_ids: list[str]) -> list[str]:
     rule_rejected = [i for i, row in items.items() if row["rule_check_status"] == STATUS_RULE_REJECTED]
     if rule_rejected:
         return [f"規則ではじかれた item は承認できません: {i}（{items[i]['rule_check_reason']}）" for i in rule_rejected]
-    elements_in_set = {row["element_id"] for row in items.values() if row["element_id"]}
+    elements_in_set = {row["element_id"] for row in items.values() if row["element_id"] and row["kind"] == "要素を作る"}
     relations_in_set = {row["relation_id"] for row in items.values() if row["relation_id"]}
 
     def ok(element_id: str | None) -> bool:
@@ -178,6 +181,11 @@ def check_before_approval(store: Store, item_ids: list[str]) -> list[str]:
 
     problems: list[str] = []
     for iid, row in items.items():
+        if row["kind"] == MOVE_ITEM_KIND:
+            # a new position of an existing element (H-2): the element itself must be approved first
+            if not ok(row["element_id"]):
+                problems.append(f"移動した要素がまだ承認されていない: {describe(row['element_id'])}（先に元の解釈を承認する。決定 12）")
+            continue
         if row["relation_id"]:
             r = store.one("select * from relation where id=?", row["relation_id"])
             for end in ("from_element_id", "to_element_id"):
@@ -203,6 +211,16 @@ def check_before_approval(store: Store, item_ids: list[str]) -> list[str]:
 
 
 # ---------------------------------------------------------------------- listings
+def _move_line(store: Store, project: ProjectFolder, item, status: str, basis: str) -> str:
+    eid = item["element_id"]
+    kind = proposed_kind_of(store, eid) or "？"
+    name = effective_name(store, project, eid) or _proposed_name(store, eid) or ""
+    c = store.one("select attribute, value_json from claim where id=?", item["claim_id"])
+    now = effective_value(store, project, eid, c["attribute"], through_type=False)
+    return (f"[{status}] 移動 {eid}  {kind} {name}  {c['attribute']}: {dumps(now.value)} → {c['value_json']}  "
+            f"{item['reason'] or ''}{basis}").rstrip()
+
+
 def describe_item(store: Store, project: ProjectFolder, item) -> str:
     status = item_status(store, item["id"])
     conf = f" 確かさ {item['confidence']:.2f}" if item["confidence"] is not None else ""
@@ -215,6 +233,8 @@ def describe_item(store: Store, project: ProjectFolder, item) -> str:
         if row:
             vnames.append(f"{row['name']}@{row['seq']}")
     basis = f" 根拠の版 {', '.join(sorted(vnames))}" if vnames else ""
+    if item["kind"] == MOVE_ITEM_KIND and item["claim_id"]:
+        return _move_line(store, project, item, status, basis)
     if item["element_id"]:
         eid = item["element_id"]
         kind = proposed_kind_of(store, eid) or "？"
@@ -434,4 +454,120 @@ def hold_issue(store, project, issue_id, reason, reviewed_by, confirm=None):
         return None
     rid = _write_review(store, "issue", iid, "保留", None, reason, reviewed_by)
     store.commit()
+    return rid
+
+
+# ---------------------------------------------------------------------- stage 4: the batch approval of moves (G-1, 決定 Q1・Q15)
+def _resolve_run(store: Store, run_id: str) -> str:
+    rows = store.all("select id from identity_run where id like ?", run_id + "%")
+    if len(rows) != 1:
+        raise ValueError(f"同定の実行が一つに決まりません: {run_id}（{len(rows)} 件）")
+    return rows[0]["id"]
+
+
+def _has_adopted(store: Store, element_id: str, attribute: str) -> bool:
+    return bool(store.one("select 1 from claim where subject_id=? and attribute=? and mode='採用'", element_id, attribute))
+
+
+def moves_listing_items(store: Store, project: ProjectFolder, run_id: str) -> list:
+    """The items the batch approval lists by default: the run's moves (意味の変更なし) still waiting, minus the
+    elements that carry a judgement on the moved attribute (those get a recheck mark and are looked at one by one)."""
+    run = store.one("select interpretation_id from identity_run where id=?", run_id)
+    out = []
+    for i in store.all("select * from interpretation_item where interpretation_id=? and kind=? order by rowid",
+                       run["interpretation_id"], MOVE_ITEM_KIND):
+        if item_status(store, i["id"]) != STATUS_PENDING:
+            continue
+        link = store.one("select verdict from identity_link where run_id=? and element_id=?", run_id, i["element_id"])
+        if not link or link["verdict"] != "移動":
+            continue
+        attribute = store.scalar("select attribute from claim where id=?", i["claim_id"])
+        if _has_adopted(store, i["element_id"], attribute):
+            continue
+        out.append(i)
+    return out
+
+
+def approve_moves(store: Store, project: ProjectFolder, run_id: str, reason: str | None, reviewed_by: str,
+                  exclude: list[str] = (), confirm: Callable[[str], bool] | None = None) -> str | None:
+    """review(target_kind=identity_run, action=移動をまとめて承認, choice_json={item_ids}) — one row (G-1)."""
+    require_terminal(project.db_path)
+    rid_run = _resolve_run(store, run_id)
+    excluded = set()
+    for x in exclude:
+        excluded |= {r["id"] for r in store.all("select id from interpretation_item where id like ?", x + "%")}
+    listed = moves_listing_items(store, project, rid_run)
+    items = [i for i in listed if i["id"] not in excluded]
+    if not items:
+        raise ValueError("まとめて承認できる移動がありません")
+    problems = check_before_approval(store, [i["id"] for i in items])
+    if problems:
+        raise ApprovalBlocked("承認を止めました：\n  " + "\n  ".join(problems))
+    run = store.one("select interpretation_id from identity_run where id=?", rid_run)
+    chosen = {x["id"] for x in items}
+    outside = [i for i in store.all("select * from interpretation_item where interpretation_id=? and kind=? order by rowid",
+                                    run["interpretation_id"], MOVE_ITEM_KIND)
+               if i["id"] not in chosen and item_status(store, i["id"]) == STATUS_PENDING]
+    text = listing(store, project, items, f"同定 {rid_run} の移動（意味の変更なし）をまとめて承認する一覧")
+    if outside:
+        text += "\n一覧に入れなかったもの（判断が付いている、または外した。一つずつ見る）：\n" + "\n".join(
+            "  " + describe_item(store, project, i) for i in outside)
+    confirm = confirm or _confirm_default(project.db_path)
+    if not confirm(text):
+        return None
+    try:
+        rid = _write_review(store, "identity_run", rid_run, "移動をまとめて承認", {"item_ids": [i["id"] for i in items]},
+                            reason, reviewed_by)
+        premises = _table_premises(store)
+        for i in items:
+            premises |= _item_premises(store, i)
+        _write_premises(store, rid, premises, reviewed_by)
+        store.commit()
+    except Exception:
+        store.conn.rollback()
+        raise
+    return rid
+
+
+# ---------------------------------------------------------------------- stage 4: resolving a recheck mark (G-2)
+def resolve_recheck(store: Store, project: ProjectFolder, mark_id: str, choice: str, reason: str | None, reviewed_by: str,
+                    value=None, unit: str | None = None, confirm: Callable[[str], bool] | None = None) -> str | None:
+    """保つ（keep the adopted value）、変える（a new adopted value）、取り消す（the adoption ends; the effective value
+    falls back to the approved observations）. The review targets the recheck mark (G-2)."""
+    require_terminal(project.db_path)
+    if choice not in RECHECK_CHOICES:
+        raise ValueError(f"選べるのは {'、'.join(RECHECK_CHOICES)}: {choice}")
+    if choice == "変える" and value is None:
+        raise ValueError("「変える」には新しい値が要ります（--value）")
+    rows = store.all("select * from recheck_mark where id like ?", mark_id + "%")
+    if len(rows) != 1:
+        raise ValueError(f"再確認の印が一つに決まりません: {mark_id}（{len(rows)} 件）")
+    mark = rows[0]
+    adopted = store.all("select * from claim where review_id=? and mode='採用' order by rowid", mark["review_id"])
+    if not adopted:
+        raise ValueError("この印の判断には採用の言い分がありません")
+    c = adopted[-1]
+    eid = c["subject_id"]
+    kind = proposed_kind_of(store, eid) or "要素"
+    name = effective_name(store, project, eid) or _proposed_name(store, eid) or ""
+    text = [f"再確認の印 {mark['id']}：{kind} {eid} {name}", f"  {c['attribute']} 採用 {c['value_json']}",
+            (f"  印の理由 {mark['reason']}  {mark['detail_json'] or ''}")[:400],
+            f"  選ぶ {choice}" + (f" → {dumps(value)}{(' ' + unit) if unit else ''}" if choice == "変える" else ""),
+            f"  理由 {reason or '（なし）'}"]
+    confirm = confirm or _confirm_default(project.db_path)
+    if not confirm("\n".join(text)):
+        return None
+    try:
+        choice_json = {"value": value, "unit": unit, "attribute": c["attribute"]} if choice == "変える" else {"claim_id": c["id"]}
+        rid = _write_review(store, "recheck_mark", mark["id"], choice, choice_json, reason, reviewed_by)
+        premises: set[tuple[str, str]] = {("element", eid), ("claim", c["id"])} | _table_premises(store)
+        if choice == "変える":
+            store.insert("claim", reviewed_by, subject_kind=c["subject_kind"], subject_id=eid, attribute=c["attribute"],
+                         value_json=dumps(value), unit=unit or c["unit"], mode="採用", statement_kind="決定", source_version_id=None,
+                         interpretation_id=None, review_id=rid, agent_id=None, confidence=None)
+        _write_premises(store, rid, premises, reviewed_by)
+        store.commit()
+    except Exception:
+        store.conn.rollback()
+        raise
     return rid

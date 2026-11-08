@@ -1,7 +1,8 @@
 """The btruth command.
 
 Stage 2: init / import / versions / compare / report. Stage 3: propose / items / issues / clues / show /
-measure, and the confirmation commands approve / reject / hold / decide / name / exclude-room.
+measure, and the confirmation commands approve / reject / hold / decide / name / exclude-room. Stage 4: identify /
+diff / rechecks / kit, and the confirmation commands approve-moves / resolve-recheck.
 
 Every subcommand takes the project folder; the database path comes from settings/project.csv
 (G-1 (a): no database file name on the command line, so the hook that stops direct database writes
@@ -222,16 +223,104 @@ def cmd_show(args) -> int:
 
 
 def cmd_measure(args) -> int:
-    from btruth.measure import measure
+    from btruth.measure import mark_measurement, measure
     project, store = _open(args)
     with store:
+        if args.list:
+            for r in store.all("select id, kind, recorded_at, counts_json from run_summary where kind in "
+                               "('AI の解釈の正しさの測定', '測定の印') order by rowid"):
+                d = json.loads(r["counts_json"] or "{}")
+                what = (f"要素 {d['elements']['fixed']}/{d['elements']['ai']}/{d['elements']['matched']}  条件 {d.get('condition', '記録なし')}"
+                        if r["kind"] != "測定の印" else f"印 → {d.get('marks')}  {d.get('condition')}")
+                print(f"{r['id']}  {r['kind']}  {r['recorded_at']}  {what}")
+            return 0
+        if args.mark:
+            rid = mark_measurement(store, args.mark, args.note, recorded_by=_who(args))
+            print(f"測定の数字に印を付けました（run_summary {rid}）。")
+            return 0
+        if not (args.interpretation and args.against):
+            raise SystemExit("--interpretation と --against が要ります（または --mark）")
         def interp(prefix):
             rows = store.all("select id from interpretation where id like ?", prefix + "%")
             if len(rows) != 1:
                 raise SystemExit(f"解釈が一つに決まりません: {prefix}（{len(rows)} 件）")
             return rows[0]["id"]
-        r = measure(store, project, interp(args.interpretation), interp(args.against), recorded_by=_who(args))
+        r = measure(store, project, interp(args.interpretation), interp(args.against), recorded_by=_who(args),
+                    condition=args.condition)
         print(json.dumps(r, ensure_ascii=False, indent=1))
+    return 0
+
+
+# ---------------------------------------------------------------------- stage 4: identity, difference, kit
+def cmd_identify(args) -> int:
+    from btruth.identity import IdentityError, identify
+    project, store = _open(args)
+    with store:
+        a, b = _resolve_version(store, args.base), _resolve_version(store, args.new)
+        try:
+            r = identify(store, project, a, b, recorded_by=_who(args))
+        except IdentityError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+        c = r.counts
+        print(f"同定しました。同定の ID {r.run_id}")
+        print("  " + "  ".join(f"{k} {c.get(k, 0)}" for k in ("一致", "移動", "追加", "消えた", "判断できない", "意味が変わった", "分割", "統合")))
+        marks = store.scalar("select count(*) from recheck_mark where caused_by_id=?", r.run_id)
+        print(f"  自動で処理した数 {c['自動で処理した数']}  人に渡した数 {c['人に渡した数']}  再確認の印 {marks}  要確認 {len(r.issues)}")
+        m = r.mesh
+        print(f"  節点の網の目: 節点 {m['nodes_base']}→{m['nodes_new']}  辺 {m['edges_base']}→{m['edges_new']}  足場 {len(m['anchors'])}")
+        if r.move_items:
+            print(f"  移動の承認待ち {len(r.move_items)} 件。人が端末で `btruth approve-moves {args.folder} --run {r.run_id[:8]}` を打つ。")
+        print("  差分は `btruth diff` で見る。")
+    return 0
+
+
+def cmd_diff(args) -> int:
+    from btruth.diff import build_diff, render_text, write_diff
+    from btruth.identity import IdentityError, resolve_run
+    project, store = _open(args)
+    with store:
+        try:
+            run_id = resolve_run(store, args.run)
+        except IdentityError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+        if args.out:
+            out = write_diff(store, project, run_id, Path(args.out), html=args.html, recorded_by=_who(args))
+            print(f"差分のレポートを書きました: {out}")
+        else:
+            print(render_text(build_diff(store, project, run_id)))
+    return 0
+
+
+def cmd_rechecks(args) -> int:
+    from btruth.effective import effective_name, proposed_kind_of
+    project, store = _open(args)
+    with store:
+        rows = [m for m in store.all("select * from recheck_mark order by rowid")
+                if not store.one("select 1 from review where target_kind='recheck_mark' and target_id=?", m["id"])]
+        if not rows:
+            print("開いている再確認の印はありません。")
+            return 0
+        print(f"再確認の印 {len(rows)} 件（人が端末で `btruth resolve-recheck` を打ち、保つ／変える／取り消す を選ぶ）")
+        for m in rows:
+            c = store.one("select subject_id, attribute, value_json from claim where review_id=? and mode='採用' order by rowid desc limit 1",
+                          m["review_id"])
+            what = ""
+            if c:
+                what = f"{proposed_kind_of(store, c['subject_id']) or '要素'} {c['subject_id']} {effective_name(store, project, c['subject_id']) or ''} " \
+                       f"{c['attribute']}={c['value_json']}"
+            print(f"印 {m['id']}  {m['reason']}  {what}")
+    return 0
+
+
+def cmd_kit(args) -> int:
+    from btruth.kit import write_kit
+    project, store = _open(args)
+    with store:
+        dest = write_kit(store, project, args.versions, Path(args.dest))
+    print(f"測定の場所を作りました: {dest}（手掛かりと手順書と守りだけ。答えは入れていない）。docs/MEASURE.md の手順で、"
+          "そのフォルダで新しい Claude Code を起動する。")
     return 0
 
 
@@ -345,9 +434,39 @@ def cmd_exclude_room(args) -> int:
     return _run_review(args, go)
 
 
+def cmd_approve_moves(args) -> int:
+    from btruth.review import approve_moves
+
+    def go(project, store):
+        from btruth.identity import resolve_run
+        run_id = resolve_run(store, args.run)
+        rid = approve_moves(store, project, run_id, reason=args.reason, reviewed_by=_who(args), exclude=args.exclude or [],
+                            confirm=_confirm_wrapper(args))
+        if rid:
+            print(f"移動のまとめての承認を記録しました（review {rid}）。")
+            from btruth.checks import check_after_moves
+            _, issues = check_after_moves(store, project, run_id, recorded_by=_who(args))
+            print(f"承認の後の照らし：新しい要確認 {len(issues)} 件（`btruth issues` で見る）。")
+        return rid
+    return _run_review(args, go)
+
+
+def cmd_resolve_recheck(args) -> int:
+    from btruth.review import resolve_recheck
+
+    def go(project, store):
+        rid = resolve_recheck(store, project, args.mark, args.choice, reason=args.reason, reviewed_by=_who(args),
+                              value=_parse_value(args.value) if args.value is not None else None, unit=args.unit,
+                              confirm=_confirm_wrapper(args))
+        if rid:
+            print(f"再確認の印の解消を記録しました（review {rid}、{args.choice}）。")
+        return rid
+    return _run_review(args, go)
+
+
 # ---------------------------------------------------------------------- parser
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="btruth", description="building-truth v3 — 器と入口（第2段）、解釈と確定（第3段）")
+    p = argparse.ArgumentParser(prog="btruth", description="building-truth v3 — 器と入口（第2段）、解釈と確定（第3段）、版の同定と持ち越し（第4段）")
     sub = p.add_subparsers(dest="command", required=True)
 
     def common(sp):
@@ -417,9 +536,37 @@ def build_parser() -> argparse.ArgumentParser:
 
     sp = sub.add_parser("measure", help="AI の解釈を固定の解釈と照らし、数を run_summary に残す（合否は付けない）")
     common(sp)
-    sp.add_argument("--interpretation", required=True, help="AI の解釈の ID（先頭でよい）")
-    sp.add_argument("--against", required=True, help="固定の解釈の ID（先頭でよい）")
+    sp.add_argument("--interpretation", help="AI の解釈の ID（先頭でよい）")
+    sp.add_argument("--against", help="固定の解釈の ID（先頭でよい）")
+    sp.add_argument("--condition", default="答えを見せない（docs/MEASURE.md）",
+                    help="読ませた条件（既定: 答えを見せない。同じセッションで答えを書いた後なら、そう書く）")
+    sp.add_argument("--mark", help="前の測定の run_summary の ID に「答えを知った状態の数字」の印を足す")
+    sp.add_argument("--note", help="印の説明")
+    sp.add_argument("--list", action="store_true", help="これまでの測定と印の一覧")
     sp.set_defaults(func=cmd_measure)
+
+    sp = sub.add_parser("identify", help="同じ出どころの二つの版を同定する（一段目・二段目。移動は承認待ちの item にする。承認はしない）")
+    common(sp)
+    sp.add_argument("base", help="前の版（<出どころ>@<版の番号> か、版の ID の先頭）")
+    sp.add_argument("new", help="新しい版")
+    sp.set_defaults(func=cmd_identify)
+
+    sp = sub.add_parser("diff", help="同定の差分のレポート（一致・移動・追加・消えた・判断できない、自動で処理した数と人に渡した数）")
+    common(sp)
+    sp.add_argument("--run", help="同定の ID（先頭でよい。既定: 最後の同定）")
+    sp.add_argument("--out", help="書き出す先（省くと画面に出す）")
+    sp.add_argument("--html", action="store_true", help="HTML で書く")
+    sp.set_defaults(func=cmd_diff)
+
+    sp = sub.add_parser("rechecks", help="開いている再確認の印の一覧（G-2）")
+    common(sp)
+    sp.set_defaults(func=cmd_rechecks)
+
+    sp = sub.add_parser("kit", help="答えを見せない測定の場所を作る（手掛かりの JSON と手順書と守りだけ。docs/MEASURE.md）")
+    common(sp)
+    sp.add_argument("--versions", nargs="+", required=True, help="読ませる版（<出どころ>@<版の番号>）")
+    sp.add_argument("--dest", required=True, help="測定の場所（からのフォルダ。リポジトリの外に置く）")
+    sp.set_defaults(func=cmd_kit)
 
     # confirmation commands (terminal only; stopped for Claude Code by the hook)
     _add = sub.add_parser
@@ -477,6 +624,22 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--reason", help="理由")
     sp.add_argument("--issue", help="この判断で閉じる要確認の ID")
     sp.set_defaults(func=cmd_exclude_room)
+
+    sp = confirm_parser("approve-moves", "移動（意味の変更なし）をまとめて承認する（G-1、決定 Q1・Q15）")
+    common(sp)
+    sp.add_argument("--run", help="同定の ID（先頭でよい。既定: 最後の同定）")
+    sp.add_argument("--exclude", nargs="*", help="一覧から外す item")
+    sp.add_argument("--reason", help="理由（人が書く）")
+    sp.set_defaults(func=cmd_approve_moves)
+
+    sp = confirm_parser("resolve-recheck", "再確認の印を解く：保つ／変える／取り消す（G-2）")
+    common(sp)
+    sp.add_argument("--mark", required=True, help="再確認の印の ID（先頭でよい）")
+    sp.add_argument("--choice", required=True, choices=["保つ", "変える", "取り消す"], help="保つ／変える／取り消す")
+    sp.add_argument("--value", help="「変える」の新しい値（JSON として読める形）")
+    sp.add_argument("--unit", help="単位")
+    sp.add_argument("--reason", help="理由（人が書く）")
+    sp.set_defaults(func=cmd_resolve_recheck)
     return p
 
 

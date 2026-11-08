@@ -16,6 +16,8 @@
       "Bash(*btruth hold*)",
       "Bash(*btruth name*)",
       "Bash(*btruth exclude-room*)",
+      "Bash(*btruth approve-moves*)",
+      "Bash(*btruth resolve-recheck*)",
       "Bash(*btruth rule*--set*)",
       "Bash(*sqlite3*)",
       "Bash(*.sqlite*)",

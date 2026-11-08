@@ -78,6 +78,8 @@ item が「承認済み」かは、その item を指すレビュー（`interpre
 
 ## AI の読みの測定（3-5-1 (2)、D-9）
 
+> **第4段で分かったこと（人の決定 2026-11-08）**：下の数字は、同じセッションで固定の解釈を書いた後に読ませたもので、答えを知った状態の数字であり、D-9 の測定ではない。`run_summary` に「測定の印」（条件＝答えを知った状態）を足した。答えを見せない測定の手順は `docs/MEASURE.md`。
+
 手順：`out/ai_run`（step1）と `out/ai_run2`（step2）に器を作り、`平面図`・`壁種表`・`仕上表` を取り込み、固定の解釈を登録。Claude Code が `btruth clues` で手掛かりを読み、手順書に従って提案を書き（`samples/ai_run/make_claude_proposals.py` → `step1_claude.json`、`step2_claude.json`）、`--instructions` 付きで登録し、`btruth measure` で照らした。承認はしていない。
 
 | | step1 | step2 |

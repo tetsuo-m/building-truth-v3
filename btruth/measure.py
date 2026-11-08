@@ -80,8 +80,22 @@ def _relation_sigs(store: Store, interpretation_id: str, sigs: dict) -> set:
     return out
 
 
+def mark_measurement(store: Store, summary_prefix: str, note: str | None, recorded_by: str = "測定") -> str:
+    """Append a mark to an earlier measurement (rows are never rewritten, B-6): e.g. the stage-3 numbers were taken
+    in the session that had written the fixed interpretation, so they are 答えを知った状態の数字, not D-9's measure
+    (BRIEF_v3_step4 §1-2)."""
+    rows = store.all("select id from run_summary where kind='AI の解釈の正しさの測定' and id like ?", summary_prefix + "%")
+    if len(rows) != 1:
+        raise SystemExit(f"測定が一つに決まりません: {summary_prefix}（{len(rows)} 件）")
+    rid = store.insert("run_summary", recorded_by, kind="測定の印", counts_json=dumps({
+        "marks": rows[0]["id"], "condition": "答えを知った状態",
+        "note": note or "同じセッションで固定の解釈を書いた後に読んだ。D-9 の測定にならない"}))
+    store.commit()
+    return rid
+
+
 def measure(store: Store, project: ProjectFolder, ai_interpretation_id: str, fixed_interpretation_id: str,
-            recorded_by: str = "測定") -> dict:
+            recorded_by: str = "測定", condition: str | None = None) -> dict:
     ai_els, fx_els = _elements(store, ai_interpretation_id), _elements(store, fixed_interpretation_id)
     ai_sigs = {eid: signature(store, ai_interpretation_id, eid, info, ai_els) for eid, info in ai_els.items() if not info["rejected"]}
     fx_sigs = {eid: signature(store, fixed_interpretation_id, eid, info, fx_els) for eid, info in fx_els.items()}
@@ -131,6 +145,7 @@ def measure(store: Store, project: ProjectFolder, ai_interpretation_id: str, fix
         "relations": {"fixed": len(fx_rels), "ai": len(ai_rels), "matched": len(ai_rels & fx_rels)},
         "handed_to_person": {"issues": len(issues), "issues_by_kind": issue_kinds, "rejected_items": rejected,
                              "unreadable_items": unread},
+        "condition": condition or "記録なし",
         "note": "合格・不合格の線は引かない（D-9）。数字を見る",
     }
     store.insert("run_summary", recorded_by, kind="AI の解釈の正しさの測定", counts_json=dumps(result))
