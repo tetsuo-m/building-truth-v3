@@ -8,7 +8,8 @@
 - 第2段（器と入口）：`btruth/`。器（SQLite）、読み手（DXF・CSV・文章）、取り込み、比べ方、レポート。どう作ったかは `docs/STEP2.md`、入れたライブラリは `docs/DEPENDENCIES.md`。
 - 第3段（解釈と確定）：提案の登録、規則の確かめ、有効値、承認のコマンド（端末からだけ）、理解の確認の画面、AI の読みの測定。どう作ったかは `docs/STEP3.md`。Claude Code が図面を読む手順は `.claude/skills/read-drawing/SKILL.md`。
 - 第4段（版の同定と持ち越し）：節点の網の目による同定、移動の観測とまとめての承認、開口の壁基準の比べ方、再確認の印、差分のレポート、原点の揃え。どう作ったか・人が試す手順は `docs/STEP4.md`。答えを見せない AI の読みの測定は `docs/MEASURE.md`。
-- 第5段以降（整合、出口）は、別の依頼書で。
+- 第5段（出どころの整合）：表・凡例・議事録を出どころに、主の表と格の表で照らす整合の照らし、出どころの間の同定、意味の面の変化、要確認の選択。どう作ったか・人が試す手順は `docs/STEP5.md`。
+- 第6段以降（出口）は、別の依頼書で。
 
 ## 使い方
 
@@ -34,6 +35,9 @@ python -m btruth kit <物件のフォルダ> --versions 平面図@1 壁種表@1 
 python -m btruth identify <物件のフォルダ> 平面図@1 平面図@2     # 版の同定（承認はしない。移動は承認待ちの item に）
 python -m btruth diff <物件のフォルダ> [--run <同定の ID>] [--out <ファイル> [--html]]
 python -m btruth rechecks <物件のフォルダ>                        # 開いている再確認の印
+python -m btruth check <物件のフォルダ> [--element <要素の ID>…]     # 整合の照らし（読むだけ。承認の後にも走る）
+python -m btruth identify-sources <物件のフォルダ> --interpretation <新しい出どころの解釈>
+python -m btruth values <物件のフォルダ> --element <要素の ID>      # 属性ごとの有効値と出どころ
 
 # 人が端末で打つ（一覧を出してから y/N。Claude Code はフックで止まる）
 python -m btruth approve <物件のフォルダ> --interpretation <解釈の ID> [--exclude <item>…] --reason "…"
@@ -45,6 +49,7 @@ python -m btruth name <物件のフォルダ> --element <要素の ID> --name �
 python -m btruth exclude-room <物件のフォルダ> --element <要素の ID> --reason "…" [--issue <要確認の ID>]
 python -m btruth approve-moves <物件のフォルダ> --run <同定の ID> [--exclude <item>…] --reason "…"
 python -m btruth resolve-recheck <物件のフォルダ> --mark <印の ID> --choice 保つ|変える|取り消す [--value …] --reason "…"
+python -m btruth choose <物件のフォルダ> --issue <要確認の ID> --option <選択肢の code> --reason "…"
 
 python -m pytest -q
 ```

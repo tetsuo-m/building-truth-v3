@@ -52,3 +52,6 @@ ElementId,*,BT_Common,ElementId,,text,DB の ID そのもの（3-8-4 (f)）
 厚さ,材料,,,,length_mm,
 名前,層の組み立て,,,Name,text,
 位置,柱,,,,point_mm,通り芯の交点（例2）
+断熱,壁種,BT_Common,Insulation,,text,外壁の断熱（議事録の未決など）
+符号,建具の型,,,Tag,text,建具表の行の鍵（B-11）
+符号,柱の型,,,Tag,text,柱リストの行の鍵

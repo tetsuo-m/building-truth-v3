@@ -315,6 +315,40 @@ def cmd_rechecks(args) -> int:
     return 0
 
 
+def cmd_values(args) -> int:
+    """Read-only: an element's attributes with their effective value (D-1), where it came from, and every claim."""
+    from btruth.common import loads
+    from btruth.consistency import primary_discipline
+    from btruth.display import claim_text, frame_note, frame_of_version
+    from btruth.effective import effective_name, effective_value, proposed_kind_of
+    project, store = _open(args)
+    with store:
+        rows = store.all("select id from element where id like ?", args.element + "%")
+        if len(rows) != 1:
+            raise SystemExit(f"要素が一つに決まりません: {args.element}（{len(rows)} 件）")
+        eid = rows[0]["id"]
+        print(f"{proposed_kind_of(store, eid) or '要素'} {eid} {effective_name(store, project, eid) or ''}".rstrip()
+              + f"  主の分野 {primary_discipline(store, project, eid) or '（決まらない）'}")
+        frames = []
+        for a in [r["attribute"] for r in store.all("select distinct attribute from claim where subject_id=? order by rowid", eid)]:
+            if a == "種類":
+                continue
+            v = effective_value(store, project, eid, a)
+            src = store.one("select source_version_id from claim where id=?", v.claim_id) if v.claim_id else None
+            vid = src["source_version_id"] if src else None
+            frames.append(frame_of_version(store, vid))
+            shown = claim_text(store, json.dumps(v.value, ensure_ascii=False), vid) if v.present else "（なし）"
+            extra = (" 要再確認" if v.recheck else "") + (f" 型から {v.via_type[:8]}" if v.via_type else "") + (f" {v.note}" if v.note else "")
+            print(f"  {a}: {shown}  [{v.status}]{extra}")
+            for c in store.all("select c.*, s.name as src, v.seq from claim c left join source_version v on v.id=c.source_version_id "
+                               "left join source s on s.id=v.source_id where c.subject_id=? and c.attribute=? order by c.rowid", eid, a):
+                where = f"{c['src']}@{c['seq']}" if c["src"] else "人の判断"
+                kind = f" {c['statement_kind']}" if c["statement_kind"] and c["statement_kind"] != "記述" else ""
+                print(f"      {c['mode']}{kind}  {where}  {claim_text(store, c['value_json'], c['source_version_id'])}")
+        print(frame_note(frames))
+    return 0
+
+
 def cmd_check(args) -> int:
     from btruth.consistency import check
     project, store = _open(args)
@@ -637,6 +671,11 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--out", help="書き出す先（省くと画面に出す）")
     sp.add_argument("--html", action="store_true", help="HTML で書く")
     sp.set_defaults(func=cmd_diff)
+
+    sp = sub.add_parser("values", help="要素の属性ごとの有効値と、その出どころ、全部の言い分（読むだけ）")
+    common(sp)
+    sp.add_argument("--element", required=True, help="要素の ID（先頭でよい）")
+    sp.set_defaults(func=cmd_values)
 
     sp = sub.add_parser("check", help="整合の照らし（主の表・格の表、型と実物、境界の区間、向かい合う境界…）。読むだけで、要確認を出す")
     common(sp)

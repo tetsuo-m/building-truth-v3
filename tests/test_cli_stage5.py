@@ -68,6 +68,42 @@ def test_one_item_approval_also_runs_the_check(tmp_path):
     assert "承認の後の照らし" in r.stdout
 
 
+def test_the_trial_flow_for_the_person_with_the_ai_reading_of_step5(tmp_path):
+    """BRIEF_v3_step5 §4: the database the person tries holds the AI's reading only (no fixture)."""
+    folder = tmp_path / "try5"
+    s5 = ROOT / "samples" / "step5"
+    s1 = ROOT / "samples" / "step1"
+    assert run("init", folder, "--name", "架空").returncode == 0
+    for args in ((s5 / "plan.dxf", "--source", "平面図", "--kind", "設計図", "--drawing-type", "建築平面図"),
+                 (s1 / "wall_types.csv", "--source", "壁種表", "--kind", "設計図", "--drawing-type", "壁種表"),
+                 (s1 / "finish_schedule.csv", "--source", "仕上表", "--kind", "設計図", "--drawing-type", "仕上表"),
+                 (s5 / "door_schedule.csv", "--source", "建具表", "--kind", "設計図", "--drawing-type", "建具表"),
+                 (s5 / "minutes.md", "--source", "議事録4", "--kind", "議事録", "--document-date", "2026-10-15")):
+        assert run("import", folder, *args).returncode == 0
+    r = run("propose", folder, ROOT / "samples" / "ai_run" / "step5_claude.json")
+    assert "はじかれた 0" in r.stdout and "知らない名前" not in r.stdout
+    interp = [line for line in r.stdout.splitlines() if "解釈の ID" in line][0].split()[-1]
+    assert "固定" not in run("items", folder).stdout
+    assert run("approve", folder, "--interpretation", interp[:8], "--reason", "図面と見比べた", stdin="y\n", terminal=True).returncode == 0
+    out = run("issues", folder).stdout
+    kinds = sorted(l.split(" [")[0] for l in out.splitlines() if " [" in l and not l.startswith(" "))
+    assert kinds == ["名前がない空間", "決定が未反映", "議事録の未決"], out
+    for code in ("type_width", "door_width", "opening_width", "keep_lower"):
+        assert f"［{code}］" in out
+    iid = issue_line(out, "決定が未反映")
+    from btruth.project import ProjectFolder, open_store
+    with open_store(ProjectFolder.load(folder)) as store:
+        opening = store.scalar("select subject_id from claim where attribute='種類' and value_json='\"開口\"'")
+        door_type = store.scalar("select subject_id from claim where attribute='種類' and value_json='\"建具の型\"'")
+    assert run("choose", folder, "--issue", iid[:8], "--option", "opening_width", "--reason", "開口だけ 900", stdin="y\n",
+               terminal=True).returncode == 0
+    r = run("values", folder, "--element", opening[:8])
+    assert "幅: 900  [採用]" in r.stdout and "210002300" not in r.stdout
+    r = run("values", folder, "--element", door_type[:8])
+    assert "幅: 800  [承認済みの観測]" in r.stdout and "観測 決定  議事録4@1  900" in r.stdout
+    assert "決定が未反映 " not in run("issues", folder).stdout
+
+
 def test_choose_refuses_outside_a_terminal(tmp_path):
     project, interp = prepared(tmp_path)
     assert run("approve", project.folder, "--interpretation", interp, "--reason", "ok", stdin="y\n", terminal=True).returncode == 0
