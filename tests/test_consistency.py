@@ -80,7 +80,8 @@ def test_example8_a_judgement_that_differs_from_later_minutes(tmp_path, terminal
 
 
 # ---------------------------------------------------------------- 例9: the door schedule, the minutes and the opening's width
-def door_project(tmp_path, schedule_rows="AD-1,片開き扉,800,2000,木製フラッシュ\n", minutes=True, door_tag="AD-1"):
+def door_project(tmp_path, schedule_rows="AD-1,片開き扉,800,2000,木製フラッシュ\n", minutes=True, door_tag="AD-1",
+                 type_width=800):
     project, store = make_project(tmp_path)
     imp(store, project, step2_like_dxf(tmp_path / "plan.dxf", door=True, door_tag=door_tag), "平面図", "設計図", "建築平面図")
     imp(store, project, WALL_TYPES, "壁種表", "設計図", "壁種表")
@@ -95,7 +96,7 @@ def door_project(tmp_path, schedule_rows="AD-1,片開き扉,800,2000,木製フ�
             e["claims"] = [c if c["attribute"] != "符号" else dict(c, value=door_tag) for c in e["claims"]]
     if schedule_rows:
         row = ref(store, "建具表", 1, "AD-1")
-        p["elements"].append(element("ad1", "建具の型", [claim("符号", "AD-1", [ev(row)]), claim("幅", 800, [ev(row)], "mm"),
+        p["elements"].append(element("ad1", "建具の型", [claim("符号", "AD-1", [ev(row)]), claim("幅", type_width, [ev(row)], "mm"),
                                                        claim("高さ", 2000, [ev(row)], "mm"), claim("建具の種類", "片開き扉", [ev(row)])], [ev(row)]))
         p["relations"].append(relation("door_type", "型である", "door_A", "ad1", evidence=[ev(row)]))
     if minutes:

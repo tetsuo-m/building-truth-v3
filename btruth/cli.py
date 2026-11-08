@@ -315,6 +315,17 @@ def cmd_rechecks(args) -> int:
     return 0
 
 
+def _judgement_basis(store, review_id) -> str:
+    """決定 Q8: a judgement with a basis document has that document's rank; without one, the rank of 設計図 (5)."""
+    rev = store.one("select basis_source_version_id from review where id=?", review_id) if review_id else None
+    vid = rev["basis_source_version_id"] if rev else None
+    if not vid:
+        return "人の判断（根拠の書類なし、設計図と同格 5）"
+    src = store.one("select s.name, s.kind, v.seq from source_version v join source s on s.id=v.source_id where v.id=?", vid)
+    rank = store.scalar("select rank from document_rank_loaded where source_kind=? order by rowid desc limit 1", src["kind"])
+    return f"人の判断（根拠 {src['name']}@{src['seq']}、{src['kind']}、格 {rank or '？'}）"
+
+
 def cmd_values(args) -> int:
     """Read-only: an element's attributes with their effective value (D-1), where it came from, and every claim."""
     from btruth.common import loads
@@ -340,9 +351,15 @@ def cmd_values(args) -> int:
             shown = claim_text(store, json.dumps(v.value, ensure_ascii=False), vid) if v.present else "（なし）"
             extra = (" 要再確認" if v.recheck else "") + (f" 型から {v.via_type[:8]}" if v.via_type else "") + (f" {v.note}" if v.note else "")
             print(f"  {a}: {shown}  [{v.status}]{extra}")
-            for c in store.all("select c.*, s.name as src, v.seq from claim c left join source_version v on v.id=c.source_version_id "
-                               "left join source s on s.id=v.source_id where c.subject_id=? and c.attribute=? order by c.rowid", eid, a):
-                where = f"{c['src']}@{c['seq']}" if c["src"] else "人の判断"
+            subjects = [(eid, "")]
+            if v.via_type:
+                label = "ふさぐ建具の型" if (proposed_kind_of(store, eid) == "開口") else "型"
+                subjects.append((v.via_type, f"（{label} {v.via_type[:8]}）"))
+            for sid, label in subjects:
+              for c in store.all("select c.*, s.name as src, v.seq from claim c left join source_version v on v.id=c.source_version_id "
+                                 "left join source s on s.id=v.source_id where c.subject_id=? and c.attribute=? order by c.rowid", sid, a):
+                where = f"{c['src']}@{c['seq']}" if c["src"] else _judgement_basis(store, c["review_id"])
+                where = label + where
                 kind = f" {c['statement_kind']}" if c["statement_kind"] and c["statement_kind"] != "記述" else ""
                 print(f"      {c['mode']}{kind}  {where}  {claim_text(store, c['value_json'], c['source_version_id'])}")
                 frames.append(frame_of_version(store, c["source_version_id"]))

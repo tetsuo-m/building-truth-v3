@@ -103,7 +103,17 @@ def primary_discipline(store: Store, project: ProjectFolder, element_id: str) ->
     """The element's primary discipline, from its kind's core rows of authority.csv (C-7, E-3): the 分野 of the
     sources whose class matches the primary source of a core attribute. Computed, not stored."""
     from btruth.effective import proposed_kind_of
+    judged = store.one("select value_json from claim where subject_id=? and attribute='主の分野' and mode='採用' order by rowid desc limit 1",
+                       element_id)
+    if judged:                      # a person's judgement re-assigning the discipline wins (E-3, Q29 への足し)
+        return loads(judged["value_json"])
     kind = _kind_of(store, element_id) or proposed_kind_of(store, element_id)
+    if kind == "開口":              # an opening follows the wall it voids (Q31)
+        wall = next((r["to_element_id"] for r in relations_from(store, element_id, "くり抜く", include_pending=True)), None)
+        if wall:
+            d = primary_discipline(store, project, wall)
+            if d:
+                return d
     keys = [(r.get("primary_source_kind") or "").strip() for r in effective_rows(store, project, "authority")
             if r.get("element_kind") == kind and (r.get("core") or "").strip() == "yes"]
     for s in store.all("select id, kind from source order by rowid"):
@@ -456,7 +466,8 @@ def check(store: Store, project: ProjectFolder, recorded_by: str, scope: list[st
     for eid in in_scope:
         if kinds.get(eid) != "開口":
             continue
-        ow = effective_value(store, project, eid, "幅")
+        from btruth.effective import _pick_observation
+        ow = _pick_observation(store, project, eid, "幅", "開口") or effective_value(store, project, eid, "幅", through_type=False)
         for f in relations_to(store, eid, "ふさぐ"):
             for t in types_of(store, f["from_element_id"]):
                 tw = effective_value(store, project, t, "幅")
@@ -467,12 +478,16 @@ def check(store: Store, project: ProjectFolder, recorded_by: str, scope: list[st
                 tol = _tolerance(rules, "幅", _source(store, oc["source_version_id"]) if oc else None,
                                  _source(store, tc["source_version_id"]) if tc else None)
                 if not _same(ow.value, tw.value, tol):
-                    issue("言い分の食い違い（主と従）", [eid, t], {"属性": "幅", "基準": "建具表（型の呼び幅）", "主の値": tw.value,
-                                                           "従": "図面の開口", "従の値": ow.value, "許容差_mm": tol},
-                          [("fix_secondary", "建具表に合わせる（図面の修正案）", {}),
+                    drawing = _source(store, oc["source_version_id"]) if oc else None
+                    dname = drawing["name"] if drawing else "図面"
+                    issue("言い分の食い違い（主と従）", [eid, t], {"属性": "幅", "基準": "建具表（ふさぐ建具の型の呼び幅。C-2d）", "主の値": tw.value,
+                                                           "従": f"{dname}（図面の開口）", "従の値": ow.value, "許容差_mm": tol},
+                          [("fix_secondary", f"建具表に合わせる（{dname}の修正案）", {}),
                            ("adopt_secondary", "この開口の幅を採る（採用）",
                             claims_effect({"subject": eid, "attribute": "幅", "value": ow.value, "unit": "mm"}))],
-                          attribute="幅", claim_ids=[x for x in (ow.claim_id, tw.claim_id) if x])
+                          attribute="幅", claim_ids=[x for x in (ow.claim_id, tw.claim_id) if x],
+                          proposal={"kind": "図面の修正案", "対象": dname,
+                                    "text": f"{dname} の開口の幅を {tw.value} に（建具表の呼び幅。許容差 {tol} mm を超える）"})
 
     offset_elements: set = set()
     # ---------------------------------------------------------------- a wall away from its boundaries while following them (例1)

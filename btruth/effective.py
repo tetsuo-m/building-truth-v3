@@ -301,11 +301,49 @@ def types_of(store: Store, element_id: str) -> list[str]:
     return [r["to_element_id"] for r in relations_from(store, element_id, "型である")]
 
 
+OPENING_FROM_DOOR_TYPE = ("幅", "高さ")      # C-2d, authority.csv: 開口の幅・高さの主＝建具表（ふさぐ建具の型の値）
+
+
+def filling_types(store: Store, opening_id: str) -> list[str]:
+    """The types of the doors that fill an opening: 開口 ←ふさぐ 建具 →型である 建具の型 (C-2d)."""
+    out = []
+    for r in relations_to(store, opening_id, "ふさぐ"):
+        for t in types_of(store, r["from_element_id"]):
+            if t not in out:
+                out.append(t)
+    return out
+
+
+def _opening_value(store: Store, project: ProjectFolder, subject_id: str, attribute: str) -> EffectiveValue | None:
+    """The opening's own adoption is handled before this. Then: the door type's adoption, the door type's
+    observation (the primary source: the door schedule), the opening's own observation (the drawing: secondary)."""
+    types = filling_types(store, subject_id)
+    if not types:
+        return None
+    for t in types:
+        ta = _adopted(store, t, attribute)
+        if ta:
+            ta.via_type = t
+            ta.note = "ふさぐ建具の型の採用"
+            return ta
+    for t in types:
+        o = _pick_observation(store, project, t, attribute, _kind_of(store, t))
+        if o is not None and o.present:
+            o.via_type = t
+            o.note = "主の出どころ（ふさぐ建具の型の値。C-2d）"
+            return o
+    return None
+
+
 def effective_value(store: Store, project: ProjectFolder, subject_id: str, attribute: str,
                     through_type: bool = True) -> EffectiveValue:
     adopted = _adopted(store, subject_id, attribute)
     if adopted:
         return adopted
+    if through_type and attribute in OPENING_FROM_DOOR_TYPE and _kind_of(store, subject_id) == "開口":
+        via = _opening_value(store, project, subject_id, attribute)
+        if via is not None:
+            return via
     types = types_of(store, subject_id) if through_type else []
     for t in types:
         ta = _adopted(store, t, attribute)

@@ -109,3 +109,39 @@
 - 柱の位置の食い違いは、図面どうしの幅 `same_position_mm` で比べる。偏心の上限（`column_offset_max_mm`）で「普通の偏心」として要確認にしない（D-8）扱いは、まだない。
 - 出どころの間の同定の鍵は、符号・室番号・名称と、柱の載る通り芯。部屋の室番号での同定はテストしていない。
 - 照らしの後の `check_run.counts_json` は空のまま（行は書き換えない）。数は `run_summary`（整合の照らし）に残す。
+
+## 人の試し（out\try5）で分かったことの直し（2026-11-08）
+
+テストは `tests/test_followups_stage5.py`。
+
+1. **開口の幅・高さの主を建具表にした**（C-2d、`authority.csv`）。開口の有効値は、開口の採用 → ふさぐ建具の型の採用 → 型の観測（主＝建具表）→ 開口の観測（図面＝従）の順で読む。型の幅に採用が付けば開口もそれに従い、開口だけの採用があればそれが優先する（E-5、決定 9）。照らしは、図面の開口の幅（従）を型の幅（主）と比べ、`door_width_tol_mm` を超えて違えば図面の修正案を出す。
+2. **開口の主の分野は、くり抜く壁の主の分野に従う**（Q31、仮の決定）。主の表に `開口, 位置, 設計図:建築平面図, , yes` の行を足した（壁がないとき用）。
+3. **人が主の分野を付け替えた判断（`主の分野` の採用）を優先する**（Q29 の人の決定）。
+4. **`choose` は、正とみなした書類を `review.basis_source_version_id` に記録していた**（`out\try5` の type_width の選択には議事録4@1 が入っている）。`values` の採用の行に、根拠の書類と格を出すように直した：「人の判断（根拠 議事録4@1、議事録、格 2）」、根拠がなければ「人の判断（根拠の書類なし、設計図と同格 5）」（決定 Q8）。開口の値が型から来ているときは、型の言い分も「（ふさぐ建具の型 …）」として並べる。
+
+**気をつけること**：図面の開口 800 と、型の採用 900 の差は 100 mm で、既定の `door_width_tol_mm`（100）の中なので、図面の修正案は出ない。この許容差は図面の形を測るときの値（決定 14、v2 Q2）。もっと厳しく見るなら、物件の `rules\rules.csv` の値を人が直す。
+
+### 新しい試しの DB（`out\try5b`）
+
+テスト用の解釈は入れていない。ID は `items` の出力の名前と照らした。
+
+| 名前（`items` の表示） | ID |
+|---|---|
+| `Claude Code` の解釈 | `9d628faf` |
+| 建具の型 AD-1（建具表、幅 800） | `334ccfca` |
+| 建具 AD-1（図面の扉） | `ec8daa46` |
+| 開口（図面、幅 800） | `dbad389f` |
+
+```
+.venv\Scripts\python -m btruth items out\try5b
+.venv\Scripts\python -m btruth approve out\try5b --interpretation 9d628faf --reason "図面と表と議事録を見比べた"
+.venv\Scripts\python -m btruth values out\try5b --element dbad389f
+.venv\Scripts\python -m btruth issues out\try5b
+.venv\Scripts\python -m btruth choose out\try5b --issue <「決定が未反映」の要確認の ID> --option type_width --reason "…"
+.venv\Scripts\python -m btruth values out\try5b --element 334ccfca
+.venv\Scripts\python -m btruth values out\try5b --element dbad389f
+.venv\Scripts\python -m btruth issues out\try5b
+```
+
+- 承認の後の `values --element dbad389f` で、開口の幅は 800［承認済みの観測］（主の出どころ＝ふさぐ建具の型の値）。言い分には、図面の 800 と、「（ふさぐ建具の型 334ccfca）」の建具表@1 800・議事録4@1 900（観測 決定）が並ぶ。主の分野は建築（くり抜く間仕切の壁に従う）。
+- `type_width` を選んだ後は、型の幅が 900［採用］（根拠 議事録4@1、議事録、格 2）、開口の幅も 900［採用］（ふさぐ建具の型の採用）になる。`opening_width` を選べば、開口だけが 900 になり、型は 800 のまま。

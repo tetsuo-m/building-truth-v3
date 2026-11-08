@@ -20,3 +20,4 @@ element_kind,attribute,primary_source_kind,secondary_source_kinds,core,note
 建具の型,高さ,設計図:建具表,議事録,,
 建具の型,建具の種類,設計図:建具表,設計図:建築平面図,yes,
 柱の型,断面,設計図:柱リスト,設計図:構造図,yes,
+開口,位置,設計図:建築平面図,,yes,壁基準の位置。主の分野はくり抜く壁に従う（Q31）。壁がなければこの行から
