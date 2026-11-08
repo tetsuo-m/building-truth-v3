@@ -559,6 +559,16 @@ def _check_after(project, store, args, review_id: str, trigger: str) -> None:
     rev = store.one("select target_kind, target_id, choice_json from review where id=?", review_id)
     ids = (loads(rev["choice_json"]) or {}).get("item_ids") or ([rev["target_id"]] if rev["target_kind"] == "interpretation_item" else [])
     scope = set()
+    if rev["target_kind"] == "issue":                       # a choice: the issue's elements and what the choice adopted
+        issue = store.one("select subject_ids_json from issue where id=?", rev["target_id"])
+        scope |= set(loads(issue["subject_ids_json"]) or [])
+        for c in ((loads(rev["choice_json"]) or {}).get("effect") or {}).get("claims") or []:
+            scope.add(c["subject"])
+        for t in list(scope):                               # a type's instances and their openings (C-2d)
+            for r in relations_to(store, t, "型である"):
+                scope.add(r["from_element_id"])
+                for f in relations_from(store, r["from_element_id"], "ふさぐ"):
+                    scope.add(f["to_element_id"])
     for i in ids:
         row = store.one("select element_id, relation_id, claim_id from interpretation_item where id=?", i)
         if not row:
@@ -669,6 +679,7 @@ def cmd_choose(args) -> int:
                             confirm=_confirm_wrapper(args))
         if rid:
             print(f"要確認の選択を記録しました（review {rid}）。")
+            _check_after(project, store, args, rid, "承認の後")
         return rid
     return _run_review(args, go)
 

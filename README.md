@@ -9,7 +9,8 @@
 - 第3段（解釈と確定）：提案の登録、規則の確かめ、有効値、承認のコマンド（端末からだけ）、理解の確認の画面、AI の読みの測定。どう作ったかは `docs/STEP3.md`。Claude Code が図面を読む手順は `.claude/skills/read-drawing/SKILL.md`。
 - 第4段（版の同定と持ち越し）：節点の網の目による同定、移動の観測とまとめての承認、開口の壁基準の比べ方、再確認の印、差分のレポート、原点の揃え。どう作ったか・人が試す手順は `docs/STEP4.md`。答えを見せない AI の読みの測定は `docs/MEASURE.md`。
 - 第5段（出どころの整合）：表・凡例・議事録を出どころに、主の表と格の表で照らす整合の照らし、出どころの間の同定、意味の面の変化、要確認の選択。どう作ったか・人が試す手順は `docs/STEP5.md`。
-- 第6段以降（出口）は、別の依頼書で。
+- 第6段（出口）：面積表・仕上表・数量表、生成した図面、承認した図面の修正案の書き戻し、IDS の読み手、IFC（IFC4）と対応表。どう作ったか・人が試す手順は `docs/STEP6.md`。
+- 第7段以降（系統・条件・測定）は、別の依頼書で。
 
 ## 使い方
 
@@ -38,6 +39,12 @@ python -m btruth rechecks <物件のフォルダ>                        # 開�
 python -m btruth check <物件のフォルダ> [--element <要素の ID>…]     # 整合の照らし（読むだけ。承認の後にも走る）
 python -m btruth identify-sources <物件のフォルダ> --interpretation <新しい出どころの解釈>
 python -m btruth values <物件のフォルダ> --element <要素の ID>      # 属性ごとの有効値と出どころ
+python -m btruth issues <物件のフォルダ> [--detail]               # 要確認（何が・選べること・打つ例。JSON は --detail）
+python -m btruth tables <物件のフォルダ> [--out <フォルダ>]         # 面積表・仕上表・数量表（CSV と HTML）
+python -m btruth drawing <物件のフォルダ> [--out <DXF>]             # 生成した図面（BT_GEN_ のレイヤ）
+python -m btruth writeback <物件のフォルダ> --source 平面図 --original <元の DXF> --out <新しい DXF>
+python -m btruth writebacks <物件のフォルダ>
+python -m btruth ifc <物件のフォルダ> [--out <IFC>] [--generation <止めた ID>]
 
 # 人が端末で打つ（一覧を出してから y/N。Claude Code はフックで止まる）
 python -m btruth approve <物件のフォルダ> --interpretation <解釈の ID> [--exclude <item>…] --reason "…"
@@ -50,6 +57,8 @@ python -m btruth exclude-room <物件のフォルダ> --element <要素の ID> -
 python -m btruth approve-moves <物件のフォルダ> --run <同定の ID> [--exclude <item>…] --reason "…"
 python -m btruth resolve-recheck <物件のフォルダ> --mark <印の ID> --choice 保つ|変える|取り消す [--value …] --reason "…"
 python -m btruth choose <物件のフォルダ> --issue <要確認の ID> --option <選択肢の code> --reason "…"
+python -m btruth confirm-drawing <物件のフォルダ> --writeback <書き戻しの ID> --reason "…"
+python -m btruth allow-ifc <物件のフォルダ> --generation <止めた IFC の ID> --reason "…"
 
 python -m pytest -q
 ```
