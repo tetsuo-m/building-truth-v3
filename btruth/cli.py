@@ -345,6 +345,7 @@ def cmd_values(args) -> int:
                 where = f"{c['src']}@{c['seq']}" if c["src"] else "人の判断"
                 kind = f" {c['statement_kind']}" if c["statement_kind"] and c["statement_kind"] != "記述" else ""
                 print(f"      {c['mode']}{kind}  {where}  {claim_text(store, c['value_json'], c['source_version_id'])}")
+                frames.append(frame_of_version(store, c["source_version_id"]))
         print(frame_note(frames))
     return 0
 

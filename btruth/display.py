@@ -37,7 +37,7 @@ def frame_of_version(store: Store, version_id: str | None) -> dict | None:
 
 def frame_note(frames) -> str:
     frames = [f for f in frames if f]
-    if not frames:
+    if not frames:          # nothing shown comes from a drawing with grid labels
         return "座標：ファイルの座標のまま（通り芯の符号がない版）。"
     labels = frames[0]["labels"]
     versions = "、".join(sorted({f["version"] for f in frames}))

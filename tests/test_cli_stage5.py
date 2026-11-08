@@ -85,6 +85,8 @@ def test_the_trial_flow_for_the_person_with_the_ai_reading_of_step5(tmp_path):
     interp = [line for line in r.stdout.splitlines() if "解釈の ID" in line][0].split()[-1]
     assert "固定" not in run("items", folder).stdout
     assert run("approve", folder, "--interpretation", interp[:8], "--reason", "図面と見比べた", stdin="y\n", terminal=True).returncode == 0
+    assert run("show", folder).returncode == 0          # the screens run on tables, minutes and the new issue kinds
+    assert run("report", folder).returncode == 0
     out = run("issues", folder).stdout
     kinds = sorted(l.split(" [")[0] for l in out.splitlines() if " [" in l and not l.startswith(" "))
     assert kinds == ["名前がない空間", "決定が未反映", "議事録の未決"], out

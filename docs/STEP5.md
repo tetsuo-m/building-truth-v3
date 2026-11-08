@@ -66,10 +66,10 @@
 
 | 名前（`items` の表示） | ID | 何か |
 |---|---|---|
-| `Claude Code` の解釈 | `ef8258fc` | 平面図（扉つき）・壁種表・仕上表・建具表・議事録を読んだ AI の読み（`samples/ai_run/step5_claude.json`） |
-| 建具の型 AD-1 | `d026549a` | 建具表の行。幅 800 |
-| 建具 AD-1 | `373e6b7a` | 図面の扉 |
-| 開口 | `e9a30a3c` | 間仕切の開口。幅 800（図面） |
+| `Claude Code` の解釈 | `7f4a1792` | 平面図（扉つき）・壁種表・仕上表・建具表・議事録を読んだ AI の読み（`samples/ai_run/step5_claude.json`） |
+| 建具の型 AD-1 | `44e7525a` | 建具表の行。幅 800 |
+| 建具 AD-1 | `74281d2c` | 図面の扉 |
+| 開口 | `2f7570d5` | 間仕切の開口。幅 800（図面） |
 
 議事録には、決定「AD-1 の幅を 900 とする。」と、未決「WT-3 の外壁の断熱は次回までに検討する。」がある。
 
@@ -78,11 +78,11 @@
 ```
 .venv\Scripts\python -m btruth items out\try5
 .venv\Scripts\python -m btruth show out\try5
-.venv\Scripts\python -m btruth approve out\try5 --interpretation ef8258fc --reason "図面と表と議事録を見比べた"
+.venv\Scripts\python -m btruth approve out\try5 --interpretation 7f4a1792 --reason "図面と表と議事録を見比べた"
 .venv\Scripts\python -m btruth issues out\try5
 .venv\Scripts\python -m btruth choose out\try5 --issue <「決定が未反映」の要確認の ID> --option <選ぶ code> --reason "…"
-.venv\Scripts\python -m btruth values out\try5 --element d026549a
-.venv\Scripts\python -m btruth values out\try5 --element e9a30a3c
+.venv\Scripts\python -m btruth values out\try5 --element 44e7525a
+.venv\Scripts\python -m btruth values out\try5 --element 2f7570d5
 .venv\Scripts\python -m btruth issues out\try5
 ```
 
@@ -94,7 +94,7 @@
   - `keep_lower`：却下（建具表のまま。理由を書く）
 - 修正案は、`issues` の「修正案:」の行に出る（建具表 の AD-1 の 幅 を 900 に直す）。
 - `values` は、属性ごとの有効値と、その出どころ、全部の言い分（観測・採用、決定・未決）を出す。座標は通り芯の符号の交点に揃えて出す。たとえば `opening_width` を選ぶと、開口の幅が 900［採用］、建具の型の幅は 800［承認済みの観測］のままで、議事録の 900 は「観測 決定」として並ぶ。
-- 試し直すときは `out\try5` を消し、`init` → `import` 五つ（`docs/STEP5.md` の上の表の出どころ。議事録は `--kind 議事録 --document-date 2026-10-15`）→ `propose samples\ai_run\step5_claude.json` で作り直す。ID は変わる。
+- 試し直すときは `out\try5` を消し、`init` → `import` 五つ（平面図・壁種表・仕上表・建具表は `--kind 設計図 --drawing-type <図面の種類> --discipline 建築`、議事録は `--kind 議事録 --document-date 2026-10-15`）→ `propose samples\ai_run\step5_claude.json` で作り直す。ID は変わる。
 
 ## 設計書と違う作り方をした所
 

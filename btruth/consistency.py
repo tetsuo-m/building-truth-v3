@@ -102,7 +102,8 @@ def _tolerance(rules: dict, attribute: str, src_a, src_b) -> float:
 def primary_discipline(store: Store, project: ProjectFolder, element_id: str) -> str | None:
     """The element's primary discipline, from its kind's core rows of authority.csv (C-7, E-3): the 分野 of the
     sources whose class matches the primary source of a core attribute. Computed, not stored."""
-    kind = _kind_of(store, element_id)
+    from btruth.effective import proposed_kind_of
+    kind = _kind_of(store, element_id) or proposed_kind_of(store, element_id)
     keys = [(r.get("primary_source_kind") or "").strip() for r in effective_rows(store, project, "authority")
             if r.get("element_kind") == kind and (r.get("core") or "").strip() == "yes"]
     for s in store.all("select id, kind from source order by rowid"):
