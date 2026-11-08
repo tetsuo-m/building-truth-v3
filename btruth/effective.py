@@ -404,7 +404,7 @@ def _issue_condition_gone(store: Store, project: ProjectFolder, issue_row, subje
     for 名前がない空間: the room has an effective name, or is excluded (部屋として扱う = false)."""
     if issue_row["kind"] == "移動の承認待ち":
         ids = (loads(issue_row["facts_json"]) or {}).get("item_ids") or []
-        return all(item_status(store, i) != STATUS_PENDING for i in ids)
+        return all(item_status(store, i) in (STATUS_APPROVED, STATUS_REJECTED) for i in ids)   # 保留 keeps it open (決定 15)
     if issue_row["kind"] == "名前がない空間":
         for s in subjects:
             if effective_name(store, project, s):

@@ -303,6 +303,8 @@ def test_a_held_move_keeps_the_previous_approved_value(tmp_path, terminal_ok):
                      if store.scalar("select element_id from interpretation_item where id=?", i) == ids["wall_A"])
     hold_items(store, project, [wall_item], reason="あとで", reviewed_by="てっちゃん")
     assert effective_value(store, project, ids["wall_A"], "芯線").value == [J(2300, 0), J(2300, 4000)]
+    from btruth.effective import open_issues
+    assert any(i["kind"] == "移動の承認待ち" for i in open_issues(store, project))    # a hold keeps the issue open
     from btruth.review import approve_items
     approve_items(store, project, [wall_item], reason="見た", reviewed_by="てっちゃん")
     assert effective_value(store, project, ids["wall_A"], "芯線").value == [J(2800, 0), J(2800, 4000)]

@@ -217,7 +217,14 @@ def _move_line(store: Store, project: ProjectFolder, item, status: str, basis: s
     name = effective_name(store, project, eid) or _proposed_name(store, eid) or ""
     c = store.one("select attribute, value_json from claim where id=?", item["claim_id"])
     now = effective_value(store, project, eid, c["attribute"], through_type=False)
-    return (f"[{status}] 移動 {eid}  {kind} {name}  {c['attribute']}: {dumps(now.value)} → {c['value_json']}  "
+    if now.present:
+        before = dumps(now.value)
+    else:   # the element itself is not approved yet (Q25): show its proposed value, marked as such
+        prev = store.one("select value_json from claim where subject_id=? and attribute=? and mode='観測' and id<>? "
+                         "and interpretation_id<>? order by rowid desc limit 1", eid, c["attribute"], item["claim_id"],
+                         item["interpretation_id"])
+        before = f"{prev['value_json']}（未承認）" if prev else "（なし）"
+    return (f"[{status}] 移動 {eid}  {kind} {name}  {c['attribute']}: {before} → {c['value_json']}  "
             f"{item['reason'] or ''}{basis}").rstrip()
 
 
