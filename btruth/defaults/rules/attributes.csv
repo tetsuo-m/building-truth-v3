@@ -45,3 +45,10 @@ ElementId,*,BT_Common,ElementId,,text,DB の ID そのもの（3-8-4 (f)）
 高さ,建具の型,,,,length_mm,建具表の高さ
 仕様,建具の型,BT_Common,Specification,,text,建具表の仕様の欄
 名称,材料,,,Name,text,LGS65、PB12.5 など（E-4）
+幅,建具,,,,length_mm,この建具だけの呼び幅（決定 13。型の幅より優先するのは採用だけ）
+断熱材,壁,BT_Common,Insulation,,text,凡例に照らして読んだ断熱材（例4）
+遮音性能,壁種,BT_Common,AcousticRating,,text,
+幅,材料,,,,length_mm,
+厚さ,材料,,,,length_mm,
+名前,層の組み立て,,,Name,text,
+位置,柱,,,,point_mm,通り芯の交点（例2）

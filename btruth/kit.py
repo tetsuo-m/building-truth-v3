@@ -55,8 +55,8 @@ def write_kit(store: Store, project: ProjectFolder, version_refs: list[str], des
                       "where v.id=?", vid)
         clues = []
         for c in store.all("select id, seq, kind, layer_raw, geometry_json, text_raw, style_json, format_extra_json from clue "
-                           "where source_version_id=? and parent_clue_id is null and generated_from is null and kind <> 'BLOCK_DEF' "
-                           "order by seq", vid):
+                           "where source_version_id=? and generated_from is null and kind <> 'BLOCK_DEF' "
+                           "and (parent_clue_id is null or ? <> 'dxf') order by seq", vid, v["format"]):
             clues.append({"ref": f"{v['source_name']}@{v['seq']}#{c['seq']}", "seq": c["seq"], "kind": c["kind"],
                           "layer": c["layer_raw"], "roles": list(roles_for(c["layer_raw"], c["kind"], layer_rows)),
                           "geometry": loads(c["geometry_json"]), "text": c["text_raw"], "style": loads(c["style_json"])})

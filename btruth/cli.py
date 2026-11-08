@@ -138,7 +138,8 @@ def cmd_clues(args) -> int:
         layer_rows = effective_rows(store, project, "layer_roles")
         clues = []
         for c in store.all("select id, seq, kind, layer_raw, geometry_json, text_raw, style_json, format_extra_json from clue "
-                           "where source_version_id=? and parent_clue_id is null and generated_from is null and kind <> 'BLOCK_DEF' order by seq", vid):
+                           "where source_version_id=? and generated_from is null and kind <> 'BLOCK_DEF' "
+                           "and (parent_clue_id is null or ? <> 'dxf') order by seq", vid, v["format"]):
             clues.append({"ref": f"{v['source_name']}@{v['seq']}#{c['seq']}", "id": c["id"], "seq": c["seq"], "kind": c["kind"],
                           "layer": c["layer_raw"], "roles": list(roles_for(c["layer_raw"], c["kind"], layer_rows)),
                           "geometry": loads(c["geometry_json"]), "text": c["text_raw"], "style": loads(c["style_json"]),
@@ -314,6 +315,48 @@ def cmd_rechecks(args) -> int:
     return 0
 
 
+def cmd_check(args) -> int:
+    from btruth.consistency import check
+    project, store = _open(args)
+    with store:
+        scope = None
+        if args.element:
+            scope = []
+            for e in args.element:
+                rows = store.all("select id from element where id like ?", e + "%")
+                if len(rows) != 1:
+                    raise SystemExit(f"要素が一つに決まりません: {e}（{len(rows)} 件）")
+                scope.append(rows[0]["id"])
+        run, issues = check(store, project, _who(args), scope=scope, trigger="人の求め")
+        marks = store.scalar("select counts_json from run_summary where kind='整合の照らし' order by rowid desc limit 1")
+        print(f"照らしました（check_run {run}）。新しい要確認 {len(issues)} 件。{json.loads(marks).get('再確認の印', 0)} 件の再確認の印を足した。")
+        for iid in issues:
+            row = store.one("select kind, severity from issue where id=?", iid)
+            print(f"  {row['kind']} [{row['severity']}]  {iid}")
+        print("開いている要確認は `btruth issues` で見る。")
+    return 0
+
+
+def cmd_identify_sources(args) -> int:
+    from btruth.identity import IdentityError, identify_sources
+    project, store = _open(args)
+    with store:
+        rows = store.all("select id from interpretation where id like ?", args.interpretation + "%")
+        if len(rows) != 1:
+            raise SystemExit(f"解釈が一つに決まりません: {args.interpretation}（{len(rows)} 件）")
+        try:
+            r = identify_sources(store, project, rows[0]["id"], recorded_by=_who(args))
+        except IdentityError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+        c = r.counts
+        print(f"出どころの間の同定をしました。同定の ID {r.run_id}、言い分を足す解釈 {r.interpretation_id}")
+        print(f"  一致 {c['一致']}  追加 {c['追加']}  判断できない {c['判断できない']}  足す言い分の item {len(r.move_items)}")
+        if r.move_items:
+            print(f"  人が端末で `btruth approve {args.folder} --interpretation {r.interpretation_id[:8]}` を打つ。")
+    return 0
+
+
 def cmd_kit(args) -> int:
     from btruth.kit import write_kit
     project, store = _open(args)
@@ -361,8 +404,35 @@ def cmd_approve(args) -> int:
             rid = approve_items(store, project, args.item, reason=args.reason, reviewed_by=_who(args), confirm=_confirm_wrapper(args))
         if rid:
             print(f"承認を記録しました（review {rid}）。")
+            _check_after(project, store, args, rid, "承認の後")
         return rid
     return _run_review(args, go)
+
+
+def _check_after(project, store, args, review_id: str, trigger: str) -> None:
+    """The consistency check after an approval: the approved elements and their neighbours (C-8: what changed)."""
+    from btruth.common import loads
+    from btruth.consistency import check
+    from btruth.effective import relations_from, relations_to
+    rev = store.one("select target_kind, target_id, choice_json from review where id=?", review_id)
+    ids = (loads(rev["choice_json"]) or {}).get("item_ids") or ([rev["target_id"]] if rev["target_kind"] == "interpretation_item" else [])
+    scope = set()
+    for i in ids:
+        row = store.one("select element_id, relation_id, claim_id from interpretation_item where id=?", i)
+        if not row:
+            continue
+        if row["element_id"]:
+            scope.add(row["element_id"])
+        if row["relation_id"]:
+            r = store.one("select from_element_id, to_element_id from relation where id=?", row["relation_id"])
+            scope |= {r["from_element_id"], r["to_element_id"]}
+        if row["claim_id"]:
+            scope.add(store.scalar("select subject_id from claim where id=?", row["claim_id"]))
+    for e in list(scope):
+        for r in relations_from(store, e) + relations_to(store, e):
+            scope |= {r["from_element_id"], r["to_element_id"]}
+    _, issues = check(store, project, _who(args), scope=sorted(x for x in scope if x), trigger=trigger)
+    print(f"承認の後の照らし：照らした要素 {len(scope)}、新しい要確認 {len(issues)} 件（`btruth issues` で見る）。")
 
 
 def cmd_reject(args) -> int:
@@ -444,9 +514,19 @@ def cmd_approve_moves(args) -> int:
                             confirm=_confirm_wrapper(args))
         if rid:
             print(f"移動のまとめての承認を記録しました（review {rid}）。")
-            from btruth.checks import check_after_moves
-            _, issues = check_after_moves(store, project, run_id, recorded_by=_who(args))
-            print(f"承認の後の照らし：新しい要確認 {len(issues)} 件（`btruth issues` で見る）。")
+            _check_after(project, store, args, rid, "移動の承認の後")
+        return rid
+    return _run_review(args, go)
+
+
+def cmd_choose(args) -> int:
+    from btruth.review import choose_option
+
+    def go(project, store):
+        rid = choose_option(store, project, args.issue, args.option, reason=args.reason, reviewed_by=_who(args),
+                            confirm=_confirm_wrapper(args))
+        if rid:
+            print(f"要確認の選択を記録しました（review {rid}）。")
         return rid
     return _run_review(args, go)
 
@@ -558,6 +638,16 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--html", action="store_true", help="HTML で書く")
     sp.set_defaults(func=cmd_diff)
 
+    sp = sub.add_parser("check", help="整合の照らし（主の表・格の表、型と実物、境界の区間、向かい合う境界…）。読むだけで、要確認を出す")
+    common(sp)
+    sp.add_argument("--element", nargs="*", help="照らす要素（既定: 承認済みの全部）")
+    sp.set_defaults(func=cmd_check)
+
+    sp = sub.add_parser("identify-sources", help="出どころの間の同定（新しい出どころの解釈の要素を、既にある要素と鍵と足場で照らす。承認はしない）")
+    common(sp)
+    sp.add_argument("--interpretation", required=True, help="新しい出どころを読んだ解釈の ID（先頭でよい）")
+    sp.set_defaults(func=cmd_identify_sources)
+
     sp = sub.add_parser("rechecks", help="開いている再確認の印の一覧（G-2）")
     common(sp)
     sp.set_defaults(func=cmd_rechecks)
@@ -631,6 +721,13 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--exclude", nargs="*", help="一覧から外す item")
     sp.add_argument("--reason", help="理由（人が書く）")
     sp.set_defaults(func=cmd_approve_moves)
+
+    sp = confirm_parser("choose", "要確認の選択肢を選ぶ（選択肢に書かれた採用・前提を書く。決定 13）")
+    common(sp)
+    sp.add_argument("--issue", required=True, help="要確認の ID（先頭でよい）")
+    sp.add_argument("--option", required=True, help="選択肢の code（`btruth issues` に出る）")
+    sp.add_argument("--reason", help="理由（人が書く）")
+    sp.set_defaults(func=cmd_choose)
 
     sp = confirm_parser("resolve-recheck", "再確認の印を解く：保つ／変える／取り消す（G-2）")
     common(sp)

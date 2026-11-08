@@ -91,7 +91,9 @@ def issue_lines(store: Store, project, issues: list[dict]) -> list[str]:
                              for s in i["subject_ids"])
         held = "（保留中）" if i.get("held") else ""
         lines.append(f"{i['kind']} [{i['severity']}]{held}  {subjects}")
-        lines.append(f"    要確認 {i['id']}  選択肢: {' / '.join(o['label'] for o in i['options'])}")
+        lines.append(f"    要確認 {i['id']}  選択肢: {' / '.join(o['label'] + '［' + o['code'] + '］' for o in i['options'])}")
+        if i.get("proposal"):
+            lines.append(f"    修正案: {json.dumps(i['proposal'], ensure_ascii=False)[:200]}")
         frame = next((f for f in (frame_of_element(store, s) for s in i["subject_ids"]) if f), None)
         frames.append(frame)
         if i.get("facts"):

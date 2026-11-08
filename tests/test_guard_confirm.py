@@ -27,6 +27,9 @@ BLOCKED = [
     "python -m btruth approve-moves out/demo --run abcd --reason ok",
     r".venv\Scripts\python -m btruth approve-moves out\demo",
     "python -m btruth resolve-recheck out/demo --mark 1 --choice 保つ --reason x",
+    # stage 5: choosing an option of an issue
+    "python -m btruth choose out/demo --issue 1 --option type_width --reason x",
+    "python3 -c \"from btruth.review import choose_option; choose_option(s, p, 'i', 'c', 'x', 'me')\"",
     "python3 -c \"import subprocess; subprocess.run(['python', '-m', 'btruth', 'approve-moves', 'out/demo'])\"",
     "python3 -c \"from btruth import review; review.approve_moves(s, p, 'r', 'ok', 'me')\"",
     "python3 -c \"from btruth.review import resolve_recheck; resolve_recheck(s, p, 'm', '保つ', 'x', 'me')\"",
@@ -131,3 +134,13 @@ def test_stage4_confirmation_commands_are_in_the_hook_and_the_deny_list():
     s = json.loads((ROOT / ".claude" / "settings.json").read_text(encoding="utf-8"))
     deny = set(s["permissions"]["deny"])
     assert {"Bash(*btruth approve-moves*)", "Bash(*btruth resolve-recheck*)"} <= deny
+
+
+def test_stage5_choose_is_in_the_hook_and_the_deny_list():
+    sys.path.insert(0, str(HOOK.parent))
+    import importlib
+    import guard_confirm
+    importlib.reload(guard_confirm)
+    assert "choose" in guard_confirm.CONFIRM
+    s = json.loads((ROOT / ".claude" / "settings.json").read_text(encoding="utf-8"))
+    assert "Bash(*btruth choose*)" in set(s["permissions"]["deny"])

@@ -50,6 +50,20 @@ LINE_KEY = {"壁": ("芯線", "WALL_CENTER"), "通り芯": ("線分", "GRID"), "
 NEIGHBOUR_KINDS = {"接する", "区切る", "境界の相手", "向かい合う", "くり抜く", "ふさぐ", "載る", "使う", "部品である", "貫通する"}
 BASIS_APPROVED = "承認の前提"
 BASIS_PROPOSED = "提案の根拠（未承認）"
+TYPE_KINDS = {"壁種", "建具の型", "柱の型", "層の組み立て", "材料"}
+KEY_ATTRIBUTES = {"柱": ("符号",), "建具": ("符号",), "建具の型": ("符号",), "壁種": ("符号",), "柱の型": ("符号",),
+                  "通り芯": ("符号",), "部屋": ("室番号",), "材料": ("名称",)}
+
+
+def add_mark(store: Store, recorded_by: str, review_id: str, caused_by_kind: str, caused_by_id: str, reason: str,
+             detail: dict) -> bool:
+    """A recheck mark (G-2), not twice for the same judgement and the same cause."""
+    if store.one("select 1 from recheck_mark where review_id=? and caused_by_kind=? and caused_by_id=?", review_id,
+                 caused_by_kind, caused_by_id):
+        return False
+    store.insert("recheck_mark", recorded_by, review_id=review_id, caused_by_kind=caused_by_kind, caused_by_id=caused_by_id,
+                 reason=reason, detail_json=dumps(detail))
+    return True
 
 
 class IdentityError(Exception):
@@ -321,7 +335,14 @@ class _Versions:
         return None
 
     def changed_in_place(self, c: dict, aligned: bool, shift=(0.0, 0.0)) -> str | None:
-        """A text / block at the same place with other content (案3: 意味の面)."""
+        """A text / block at the same place with other content, or a table row with the same key (its first field)
+        and other content (案3: 意味の面)."""
+        if c["kind"] == "ROW":
+            key = _row_key(c["text"])
+            for b in self.new_clues(aligned):
+                if b["kind"] == "ROW" and _row_key(b["text"]) == key and b["text"] != c["text"]:
+                    return b["id"]
+            return None
         if c["kind"] not in ("TEXT", "MTEXT", "INSERT"):
             return None
         n = _shift_norm(c["norm"], shift)
@@ -341,6 +362,16 @@ class _Versions:
         o = v["origin"] if v["aligned"] else None
         ox, oy = (o["x"], o["y"]) if o else (0.0, 0.0)
         return (p[0] * v["uf"] - ox, p[1] * v["uf"] - oy)
+
+
+def _row_key(text: str | None) -> str | None:
+    import csv
+    if not text:
+        return None
+    try:
+        return next(csv.reader([text]))[0].strip()
+    except (StopIteration, csv.Error):
+        return None
 
 
 def _shift_norm(n: dict, shift) -> dict:
@@ -500,6 +531,12 @@ def identify(store: Store, project: ProjectFolder, base_version_id: str, new_ver
         vid = claim_row["source_version_id"] or base_version_id
         return (V.to_norm(s[0], vid), V.to_norm(s[1], vid))
 
+    # ---------------------------------------------------------------- elements without a clue of this source: carried over (決定 16)
+    for eid, _ in elements:
+        mine, other = split_by_source(element_basis(eid))
+        if not mine:
+            link(eid, "一致", "この出どころの根拠を持たない（持ち越し）", {}, basis_record(eid, mine, other, [], []))
+
     # ---------------------------------------------------------------- rooms and their boundaries (faces, corners)
     room_face: dict[str, int] = {}
     for eid, _ in elements:
@@ -519,7 +556,7 @@ def identify(store: Store, project: ProjectFolder, base_version_id: str, new_ver
 
     face_json = {e.get("base_face"): e for e in mm["json"]["faces"] if "base_face" in e}
     for eid, _ in elements:
-        if kinds[eid] != "部屋":
+        if kinds[eid] != "部屋" or eid in links:
             continue
         mine, other = split_by_source(element_basis(eid))
         found = [c for c in mine if find(c)]
@@ -555,6 +592,9 @@ def identify(store: Store, project: ProjectFolder, base_version_id: str, new_ver
             continue
         room = next((r["to_element_id"] for r in relations_from(store, eid, "区切る", include_pending=True)), None)
         if room is None or (kinds.get(room) or _kind_of(store, room)) != "部屋":
+            continue
+        if eid in links:
+            room_boundary_ids.add(eid)
             continue
         room_boundary_ids.add(eid)
         mine, other = split_by_source(element_basis(eid))
@@ -757,6 +797,27 @@ def identify(store: Store, project: ProjectFolder, base_version_id: str, new_ver
         elif changed:
             l["facts"]["変わった手掛かり"] = changed
 
+    # ---------------------------------------------------------------- meaning changes spread (案3-1, 案3-2)
+    type_changed: list[str] = []
+    for eid, l in list(links.items()):
+        if l["verdict"] != "意味が変わった":
+            continue
+        if kinds.get(eid) == "記号の定義":
+            for r in store.all("select distinct it.element_id, it.claim_id from interpretation_evidence e join interpretation_item it "
+                               "on it.id=e.item_id where e.element_ref_id=?", eid):
+                dep = r["element_id"] or (store.scalar("select subject_id from claim where id=?", r["claim_id"]) if r["claim_id"] else None)
+                if dep and dep in links and dep != eid:
+                    links[dep].update(verdict="意味が変わった", reason="凡例の定義が変わった", move=None)
+                    links[dep]["facts"]["凡例の要素"] = eid
+        elif kinds.get(eid) in TYPE_KINDS:
+            type_changed.append(eid)
+    instances: dict[str, str] = {}
+    for t in type_changed:
+        targets = [t] + [r["to_element_id"] for r in relations_from(store, t, "組み立てを持つ", include_pending=True)]
+        for x in targets:
+            for r in relations_to(store, x, "型である", include_pending=True) + relations_to(store, x, "使う", include_pending=True):
+                instances.setdefault(r["from_element_id"], t)
+
     # ---------------------------------------------------------------- the scope for the AI (案4) and the candidates for addition
     candidates = [c for c in V.new_clues(aligned) if c["id"] not in new_used and not _explained_by_move(c, links)]
     reinterpret = [eid for eid, l in links.items() if l["verdict"] in ("判断できない", "消えた", "意味が変わった")]
@@ -833,17 +894,36 @@ def identify(store: Store, project: ProjectFolder, base_version_id: str, new_ver
                      candidates_json=dumps(l["candidates"]) if l["candidates"] is not None else None, verdict=l["verdict"],
                      reason=l["reason"], basis_json=dumps(l["basis"]), facts_json=dumps(l["facts"]), decided_by="自動")
 
-    # recheck marks (G-2): judgements on elements that did not stay the same
+    # recheck marks (G-2, 決定 Q27): judgements on elements that did not stay the same
     marks = 0
     for eid, l in links.items():
         if l["verdict"] == "一致":
             continue
         for c in store.all("select distinct review_id from claim where subject_id=? and mode='採用' and review_id is not null", eid):
-            store.insert("recheck_mark", recorded_by, review_id=c["review_id"], caused_by_kind="identity_run", caused_by_id=run_id,
-                         reason="根拠の手掛かりが変わった", detail_json=dumps({"element_id": eid, "verdict": l["verdict"],
-                                                                         "reason": l["reason"], "facts": l["facts"]}))
-            marks += 1
+            if add_mark(store, recorded_by, c["review_id"], "identity_run", run_id, "根拠の手掛かりが変わった",
+                        {"element_id": eid, "verdict": l["verdict"], "reason": l["reason"], "facts": l["facts"]}):
+                marks += 1
             l["judged"] = True
+    # Q27 の足し: a type whose row changed → the judgements on its instances, even when the instance is 一致
+    for inst, t in instances.items():
+        for c in store.all("select distinct review_id from claim where subject_id=? and mode='採用' and review_id is not null", inst):
+            if add_mark(store, recorded_by, c["review_id"], "source_version", new_version_id, "使っている型の表の行が変わった",
+                        {"element_id": inst, "type": t, "identity_run_id": run_id}):
+                marks += 1
+        store.insert("impact", recorded_by, run_id=run_id, element_id=inst, relation_id=None, reason="表の行が変わった",
+                     action="再確認" if store.one("select 1 from claim where subject_id=? and mode='採用'", inst) else "再計算だけ",
+                     depth=1)
+    # Q27 の足し: a judgement whose premises hold a table row / a sentence of this source that is gone or changed
+    for prem in store.all("select distinct p.review_id, p.ref_id from review_premise p join clue c on c.id=p.ref_id "
+                          "join source_version v on v.id=c.source_version_id where p.kind='clue' and v.source_id=? "
+                          "and c.kind in ('ROW','CELL','SENTENCE','PARAGRAPH')", source_id):
+        if not store.one("select 1 from claim where review_id=? and mode='採用'", prem["review_id"]):
+            continue
+        if find(prem["ref_id"]):
+            continue
+        if add_mark(store, recorded_by, prem["review_id"], "source_version", new_version_id, "判断の前提の表の行・文が変わった",
+                    {"clue_id": prem["ref_id"], "identity_run_id": run_id}):
+            marks += 1
 
     # 向かい合う ends when the room on the other side is split or merged (例1 の参考)
     for eid, l in links.items():
@@ -950,3 +1030,117 @@ def resolve_run(store: Store, prefix: str | None) -> str:
     if len(rows) != 1:
         raise IdentityError(f"同定の実行が一つに決まりません: {prefix}（{len(rows)} 件）")
     return rows[0]["id"]
+
+
+# ====================================================================== identity between sources (B-13, 例2)
+def _key_of(store: Store, project: ProjectFolder, eid: str, kind: str) -> dict:
+    from btruth.effective import proposed_value
+    key = {}
+    for a in KEY_ATTRIBUTES.get(kind, ()):
+        v = effective_value(store, project, eid, a, through_type=False)
+        val = v.value if v.present else proposed_value(store, eid, a)
+        if val not in (None, ""):
+            key[a] = val
+    if kind == "柱":
+        grids = set()
+        for r in relations_from(store, eid, "載る", include_pending=True):
+            g = effective_value(store, project, r["to_element_id"], "符号").value
+            from btruth.effective import proposed_value as pv
+            grids.add(g if g is not None else pv(store, r["to_element_id"], "符号"))
+        if grids:
+            key["通り芯"] = sorted(str(g) for g in grids)
+    return key
+
+
+def identify_sources(store: Store, project: ProjectFolder, interpretation_id: str, recorded_by: str = "同定") -> IdentityResult:
+    """The elements proposed by one interpretation (a new source) are matched with the elements already there,
+    on their keys (符号・室番号・名称) and, for columns, the grid axes they stand on (足場). Same → the new
+    source's claims are added to the existing element as items (kind 既存の要素と同じ) waiting for approval, and
+    the proposed element counts as merged (computed status; no row is rewritten). Several candidates →
+    判断できない, handed to the person. No key or no candidate → 追加 (the proposed element stays)."""
+    from btruth.effective import is_approved_element
+    interp = store.one("select * from interpretation where id=?", interpretation_id)
+    if interp is None:
+        raise IdentityError("解釈が見つかりません")
+    rules = effective_rules(store, project)
+    news = [r["element_id"] for r in store.all("select element_id from interpretation_item where interpretation_id=? and kind='要素を作る' "
+                                               "and rule_check_status='通った' order by rowid", interpretation_id)]
+    existing = [r["element_id"] for r in store.all("select it.id, it.element_id from interpretation_item it where it.kind='要素を作る' "
+                                                   "and it.interpretation_id<>? order by it.rowid", interpretation_id)
+                if item_status(store, r["id"]) in LIVE]
+    agent = store.one("select id from agent where name=? and kind='規則の読み手' and coalesce(version,'')=?", AGENT_NAME, __version__)
+    agent_id = agent["id"] if agent else store.insert("agent", recorded_by, name=AGENT_NAME, kind="規則の読み手", model=None,
+                                                      version=__version__, instructions_sha256=None)
+    versions = loads(interp["source_version_ids_json"]) or []
+    id_interp = store.insert("interpretation", recorded_by, source_version_ids_json=dumps(versions), agent_id=agent_id,
+                             scope_json=dumps({"kind": "出どころの間の同定", "interpretation": interpretation_id}), premise_json="[]",
+                             summary=f"出どころの間の同定：{interp['summary'] or interpretation_id} の要素を、既にある要素と照らした")
+    links, items, issues = [], [], []
+    counts = {"一致": 0, "追加": 0, "判断できない": 0}
+    for n in news:
+        kind = _kind_of(store, n) or proposed_kind_of(store, n)
+        key = _key_of(store, project, n, kind)
+        if not key or not any(a in key for a in KEY_ATTRIBUTES.get(kind, ())):
+            links.append((None, n, "追加", "鍵がない（新しい要素として残す）", {}, None))
+            counts["追加"] += 1
+            continue
+        cands = []
+        for e in existing:
+            ek = _kind_of(store, e) or proposed_kind_of(store, e)
+            if ek != kind:
+                continue
+            other = _key_of(store, project, e, ek)
+            if all(other.get(a) == v for a, v in key.items() if a in other or a != "通り芯") and \
+                    all(key.get(a) == v for a, v in other.items() if a in key):
+                cands.append(e)
+        approved = [c for c in cands if is_approved_element(store, c)]
+        cands = approved or cands
+        if len(cands) == 1:
+            e = cands[0]
+            links.append((e, n, "一致", "鍵と足場が同じ", {"足場": key}, None))
+            counts["一致"] += 1
+            for c in store.all("select * from claim where subject_id=? and mode='観測' and attribute<>'種類' and interpretation_id=? "
+                               "order by rowid", n, interpretation_id):
+                cid = store.insert("claim", recorded_by, subject_kind="element", subject_id=e, attribute=c["attribute"],
+                                   value_json=c["value_json"], unit=c["unit"], mode="観測", statement_kind=c["statement_kind"],
+                                   source_version_id=c["source_version_id"], interpretation_id=id_interp, review_id=None,
+                                   agent_id=c["agent_id"], confidence=c["confidence"])
+                evid = store.all("select clue_id, role, reason from claim_evidence where claim_id=?", c["id"])
+                for ev_ in evid:
+                    store.insert("claim_evidence", recorded_by, claim_id=cid, clue_id=ev_["clue_id"], role=ev_["role"], reason=ev_["reason"])
+                iid = store.insert("interpretation_item", recorded_by, interpretation_id=id_interp, kind=ITEM_KIND, element_id=e,
+                                   relation_id=None, claim_id=cid, assumption_id=None,
+                                   reason=f"出どころの間の同定：{c['attribute']} を同じ要素に足す（鍵 {dumps(key)}）", confidence=1.0,
+                                   rule_check_status="通った", rule_check_reason=None)
+                for ev_ in evid:
+                    store.insert("interpretation_evidence", recorded_by, item_id=iid, clue_id=ev_["clue_id"], element_ref_id=None,
+                                 role=ev_["role"], reason="出どころの間の同定")
+                items.append(iid)
+        elif len(cands) > 1:
+            links.append((None, n, "判断できない", "鍵が重なる", {"足場": key}, cands))
+            counts["判断できない"] += 1
+        else:
+            links.append((None, n, "追加", "同じ鍵の要素がない", {"足場": key}, None))
+            counts["追加"] += 1
+    counts["自動で処理した数"] = counts["一致"] + counts["追加"]
+    counts["人に渡した数"] = counts["判断できない"]
+    run_id = store.insert("identity_run", recorded_by, kind="出どころの間", base_source_version_id=None,
+                          new_source_version_id=versions[0] if versions else None, frame_json=dumps({"note": "鍵と足場で照らした"}),
+                          rules_table_load_id=latest_load_id(store, "rules", "物件"), mesh_json=dumps({}), interpretation_id=id_interp,
+                          counts_json=dumps(counts))
+    for e, n, verdict, reason, basis, cands in links:
+        store.insert("identity_link", recorded_by, run_id=run_id, element_id=e, new_element_id=n,
+                     candidates_json=dumps(cands) if cands else None, verdict=verdict, reason=reason, basis_json=dumps(basis),
+                     facts_json="{}", decided_by="自動")
+        if verdict == "判断できない":
+            iid = store.insert("issue", recorded_by, check_run_id=None, identity_run_id=run_id, condition_check_id=None,
+                               kind="同じ要素か判断できない", severity=_severity(rules, "同じ要素か判断できない"),
+                               subject_ids_json=dumps([n] + cands), basis_json=dumps(basis), facts_json=dumps({"candidates": cands}),
+                               proposal_json=None)
+            for code, label in (("new", "別の要素とする（新しい要素を承認）"), ("same", "どれかと同じとする（人）")):
+                store.insert("issue_option", recorded_by, issue_id=iid, code=code, label=label, effect_json="{}")
+            issues.append(iid)
+    store.insert("run_summary", recorded_by, kind="出どころの間の同定", counts_json=dumps({"identity_run_id": run_id, **counts}))
+    store.commit()
+    return IdentityResult(run_id=run_id, interpretation_id=id_interp, counts=counts, mesh={}, move_items=items, issues=issues,
+                          links={n: v for _, n, v, *_ in links})

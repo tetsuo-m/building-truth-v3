@@ -32,6 +32,7 @@ STATUS_REJECTED = "却下"
 STATUS_HELD = "保留"
 STATUS_PENDING = "提案中"
 STATUS_RULE_REJECTED = "はじかれた"
+STATUS_MERGED = "同じ要素に統合"        # a proposed element found to be an existing one by the identity between sources (B-13)
 NAME_ATTRIBUTES = ("名前", "室名", "室番号")
 
 
@@ -58,12 +59,27 @@ def _is_default_interpretation(store: Store, interpretation_id: str) -> bool:
     return bool(row) and row["summary"] == DEFAULT_SUMMARY and row["kind"] == "規則の読み手"
 
 
+def merged_into(store: Store, element_id: str | None) -> str | None:
+    """The existing element a proposed one was found to be (identity between sources, verdict 一致), if any."""
+    if not element_id:
+        return None
+    row = store.one("select l.element_id from identity_link l join identity_run r on r.id=l.run_id where r.kind='出どころの間' "
+                    "and l.new_element_id=? and l.verdict='一致' order by l.rowid desc limit 1", element_id)
+    return row["element_id"] if row else None
+
+
 def item_status(store: Store, item_id: str) -> str:
-    item = store.one("select rule_check_status, interpretation_id from interpretation_item where id=?", item_id)
+    item = store.one("select rule_check_status, interpretation_id, kind, element_id, relation_id from interpretation_item where id=?", item_id)
     if item is None:
         return "不明"
     if item["rule_check_status"] == STATUS_RULE_REJECTED:
         return STATUS_RULE_REJECTED
+    if item["kind"] == "要素を作る" and merged_into(store, item["element_id"]):
+        return STATUS_MERGED
+    if item["relation_id"]:
+        r = store.one("select from_element_id, to_element_id from relation where id=?", item["relation_id"])
+        if r and (merged_into(store, r["from_element_id"]) or merged_into(store, r["to_element_id"])):
+            return STATUS_MERGED
     if _is_default_interpretation(store, item["interpretation_id"]):
         return STATUS_DEFAULT
     latest = None
@@ -214,6 +230,8 @@ def _primary_source_kind(store: Store, project: ProjectFolder, kind: str | None,
 def _approved_observations(store: Store, subject_id: str, attribute: str) -> list[dict]:
     out = []
     for c in store.all("select * from claim where subject_id=? and attribute=? and mode='観測' order by rowid", subject_id, attribute):
+        if c["statement_kind"] == "未決":          # 「〜を検討する」「次回確認」: no rank, no value (C-10)
+            continue
         st = claim_status(store, c)
         if st != STATUS_APPROVED:
             continue
@@ -349,13 +367,16 @@ def approved_elements_by_kind(store: Store, project: ProjectFolder) -> dict[str,
     return out
 
 
-def find_element(store: Store, project: ProjectFolder, kind: str, name: str | None = None) -> str | None:
-    """An approved or default element of the kind (and name)."""
+def find_element(store: Store, project: ProjectFolder, kind: str, name: str | None = None, keys: dict | None = None) -> str | None:
+    """An approved or default element of the kind (and name, and key attributes such as 符号 = AD-1; B-11)."""
     for e in store.all("select id from element order by rowid"):
         if not is_approved_element(store, e["id"]) or _kind_of(store, e["id"]) != kind:
             continue
-        if name is None or effective_name(store, project, e["id"]) == name:
-            return e["id"]
+        if name is not None and effective_name(store, project, e["id"]) != name:
+            continue
+        if keys and any(effective_value(store, project, e["id"], a, through_type=False).value != v for a, v in keys.items()):
+            continue
+        return e["id"]
     return None
 
 
@@ -415,20 +436,39 @@ def _issue_condition_gone(store: Store, project: ProjectFolder, issue_row, subje
     return False
 
 
-def open_issues(store: Store, project: ProjectFolder) -> list[dict]:
-    """Issues without a closing review (any review on the issue other than 保留 closes it; 決定 15) and
-    whose condition still holds."""
+CONSISTENCY_TRIGGERS = ("人の求め", "承認の後", "移動の承認の後", "取り込みの後")
+
+
+def _later_check_scopes(store: Store) -> list[tuple[int, set]]:
     out = []
-    for i in store.all("select * from issue order by rowid"):
+    for r in store.all("select rowid as rn, trigger, scope_json from check_run order by rowid"):
+        if r["trigger"] in CONSISTENCY_TRIGGERS:
+            out.append((r["rn"], set((loads(r["scope_json"]) or {}).get("elements") or [])))
+    return out
+
+
+def open_issues(store: Store, project: ProjectFolder) -> list[dict]:
+    """Issues without a closing review (any review on the issue other than 保留 closes it; 決定 15), whose condition
+    still holds, and not replaced by a later consistency check whose scope holds all their subjects (I-2, 決定 15:
+    the latest check per scope; held issues and issues outside the scope stay open)."""
+    out = []
+    scopes = _later_check_scopes(store)
+    for i in store.all("select rowid as rn, * from issue order by rowid"):
         reviews = store.all("select action from review where target_kind='issue' and target_id=? order by rowid", i["id"])
         if any(r["action"] != "保留" for r in reviews):
             continue
         subjects = loads(i["subject_ids_json"]) or []
+        if not reviews and i["check_run_id"]:
+            own = store.one("select rowid as rn from check_run where id=?", i["check_run_id"])
+            if own and any(rn > own["rn"] and subjects and set(subjects) <= sc for rn, sc in scopes):
+                continue
         if _issue_condition_gone(store, project, i, subjects):
             continue
         d = dict(i)
         d["subject_ids"] = subjects
         d["facts"] = loads(i["facts_json"]) or {}
+        d["basis"] = loads(i["basis_json"]) or {}
+        d["proposal"] = loads(i["proposal_json"])
         d["options"] = [dict(o) for o in store.all("select code, label, effect_json from issue_option where issue_id=? order by rowid", i["id"])]
         d["held"] = bool(reviews)
         out.append(d)

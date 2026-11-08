@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Callable
 
 from btruth.common import dumps, loads, new_id, now_iso
-from btruth.effective import (STATUS_APPROVED, STATUS_DEFAULT, STATUS_PENDING, STATUS_REJECTED, STATUS_RULE_REJECTED,
+from btruth.effective import (STATUS_APPROVED, STATUS_DEFAULT, STATUS_MERGED, STATUS_PENDING, STATUS_REJECTED, STATUS_RULE_REJECTED,
                               effective_value, element_status, item_status, proposed_kind_of, effective_name, proposed_value,
                               relation_status)
 from btruth.project import ProjectFolder
@@ -369,7 +369,8 @@ def approve_interpretation(store: Store, project: ProjectFolder, interpretation_
     for x in exclude:
         excluded |= {r["id"] for r in store.all("select id from interpretation_item where id like ?", x + "%")}
     items = [i for i in store.all("select * from interpretation_item where interpretation_id=? order by rowid", interp_id)
-             if i["rule_check_status"] != STATUS_RULE_REJECTED and i["kind"] != "読めない" and i["id"] not in excluded]
+             if i["rule_check_status"] != STATUS_RULE_REJECTED and i["kind"] != "読めない" and i["id"] not in excluded
+             and item_status(store, i["id"]) != STATUS_MERGED]          # merged into an existing element (B-13)
     if not items:
         raise ValueError("承認できる item がありません")
     problems = check_before_approval(store, [i["id"] for i in items])
@@ -647,6 +648,56 @@ def resolve_recheck(store: Store, project: ProjectFolder, mark_id: str, choice: 
             store.insert("claim", reviewed_by, subject_kind=c["subject_kind"], subject_id=eid, attribute=c["attribute"],
                          value_json=dumps(value), unit=unit or c["unit"], mode="採用", statement_kind="決定", source_version_id=None,
                          interpretation_id=None, review_id=rid, agent_id=None, confidence=None)
+        _write_premises(store, rid, premises, reviewed_by)
+        store.commit()
+    except Exception:
+        store.conn.rollback()
+        raise
+    return rid
+
+
+# ---------------------------------------------------------------------- stage 5: choosing an option of an issue (I-2, 決定 13)
+def choose_option(store: Store, project: ProjectFolder, issue_id: str, code: str, reason: str | None, reviewed_by: str,
+                  confirm: Callable[[str], bool] | None = None) -> str | None:
+    """The person picks one of the issue's options. The option's effect says what is written (subject, attribute,
+    value — nothing is invented here): adopted claims (mode=採用) and/or a level-3 assumption, with the review on the
+    issue, in one transaction (D-1, G-1). An option without effect records the choice only (確認した, 判断を保つ, …)."""
+    require_terminal(project.db_path)
+    iid = _resolve_issue(store, issue_id)
+    issue = store.one("select * from issue where id=?", iid)
+    opt = store.one("select * from issue_option where issue_id=? and code=?", iid, code)
+    if opt is None:
+        codes = [r["code"] for r in store.all("select code from issue_option where issue_id=? order by rowid", iid)]
+        raise ValueError(f"選択肢がありません: {code}（この要確認の選択肢: {'、'.join(codes)}）")
+    effect = loads(opt["effect_json"]) or {}
+    from btruth.display import claim_text
+    lines = [f"要確認 {iid}：{issue['kind']}", f"  選ぶ {opt['label']}（{code}）", f"  理由 {reason or '（なし）'}"]
+    for c in effect.get("claims") or []:
+        kind = proposed_kind_of(store, c["subject"]) or "要素"
+        lines.append(f"  採用を書く：{kind} {c['subject']} {c['attribute']} ← {dumps(c['value'])}{(' ' + c['unit']) if c.get('unit') else ''}")
+    if effect.get("assumption"):
+        a = effect["assumption"]
+        lines.append(f"  前提を書く：段 {a.get('level')} {a.get('kind')} = {a.get('value')}")
+    if not effect.get("claims") and not effect.get("assumption"):
+        lines.append("  値は書かない（選んだことだけを記録する）")
+    confirm = confirm or _confirm_default(project.db_path)
+    if not confirm("\n".join(lines)):
+        return None
+    try:
+        rid = _write_review(store, "issue", iid, opt["label"], {"code": code, "effect": effect}, reason, reviewed_by,
+                            effect.get("basis_source_version_id"))
+        premises: set[tuple[str, str]] = {("issue", iid)} | _table_premises(store)
+        for cid in (loads(issue["basis_json"]) or {}).get("claim_ids") or []:
+            premises.add(("claim", cid))
+        for c in effect.get("claims") or []:
+            store.insert("claim", reviewed_by, subject_kind="element", subject_id=c["subject"], attribute=c["attribute"],
+                         value_json=dumps(c["value"]), unit=c.get("unit"), mode="採用", statement_kind="決定", source_version_id=None,
+                         interpretation_id=None, review_id=rid, agent_id=None, confidence=None)
+            premises.add(("element", c["subject"]))
+        if effect.get("assumption"):
+            a = effect["assumption"]
+            store.insert("assumption", reviewed_by, level=a.get("level"), scope_json=dumps(a.get("scope")), kind=a.get("kind"),
+                         value_json=dumps(a.get("value")), confidence=None, created_by_interpretation_id=None, review_id=rid)
         _write_premises(store, rid, premises, reviewed_by)
         store.commit()
     except Exception:

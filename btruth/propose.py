@@ -30,7 +30,7 @@ from pathlib import Path
 
 from btruth import geometry
 from btruth.common import dumps, loads, new_id, sha256_of
-from btruth.effective import (STATUS_APPROVED, STATUS_DEFAULT, _kind_of, effective_value, find_element,
+from btruth.effective import (proposed_kind_of, STATUS_APPROVED, STATUS_DEFAULT, _kind_of, effective_value, find_element,
                               is_approved_element, relations_from, relations_to, element_status, STATUS_REJECTED,
                               STATUS_RULE_REJECTED)
 from btruth.project import ProjectFolder
@@ -125,7 +125,8 @@ class _Resolver:
             return rows[0]["id"] if len(rows) == 1 else None
         find = ref.get("find")
         if isinstance(find, dict) and find.get("kind"):
-            return find_element(self.store, self.project, find["kind"], find.get("name"))
+            keys = {k: v for k, v in find.items() if k not in ("kind", "name")}
+            return find_element(self.store, self.project, find["kind"], find.get("name"), keys or None)
         return None
 
 
@@ -188,7 +189,7 @@ def register_proposal(store: Store, project: ProjectFolder, proposal: dict, reco
             return None, None
         if isinstance(ref, dict):
             eid = res.existing_element(ref)
-            return (eid, _kind_of(store, eid)) if eid else (None, None)
+            return (eid, _kind_of(store, eid) or proposed_kind_of(store, eid)) if eid else (None, None)
         return None, None
 
     def resolve_evidence(evs) -> tuple[list[dict], list[str]]:
