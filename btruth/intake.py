@@ -110,14 +110,17 @@ def import_file(store: Store, project: ProjectFolder, path: Path, source_name: s
     archive_abs.parent.mkdir(parents=True, exist_ok=True)
     if not archive_abs.exists():
         shutil.copyfile(path, archive_abs)
+    writeback_of_file = store.one("select id from writeback where sha256=?", sha)       # H-3: linked, still observed
     version_id = store.insert("source_version", recorded_by, source_id=source_id, seq=seq, file_name=path.name,
                               sha256=sha, format=result.format, reader_name=result.reader_name,
                               reader_version=result.reader_version, unit_factor=result.unit_factor,
                               document_date=document_date, archive_path=archive_rel.as_posix(),
-                              imported_at=now_iso(), imported_by=recorded_by, writeback_id=None, note=None)
+                              imported_at=now_iso(), imported_by=recorded_by,
+                              writeback_id=writeback_of_file["id"] if writeback_of_file else None, note=None)
 
     # M-1 / H-2: generated output is recognised by the file's sha256 or by the layer marker
-    generation_of_file = store.one("select id from generation where sha256=?", sha)
+    # a written-back drawing (H-3) is the person's drawing, not a generated output: linked, and observed
+    generation_of_file = store.one("select id from generation where sha256=? and kind<>'書き戻し'", sha)
     prefix = rules.get("generated_layer_prefix") or "BT_GEN_"
     prefix_generations = [g["id"] for g in store.all("select id, marker_json from generation")
                           if prefix in (g["marker_json"] or "")]

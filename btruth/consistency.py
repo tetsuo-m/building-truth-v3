@@ -542,13 +542,19 @@ def check(store: Store, project: ProjectFolder, recorded_by: str, scope: list[st
             issue("壁と境界のずれ", subjects,
                   {"ずれ_mm": max(d for _, d, _ in off), "境界ごと": [[b, d] for b, d, _ in off],
                    "note": "期待の位置は保存しない（B-9、B-10）。壁の採用は書かない"},
-                  [("follow", "境界線に合わせる", claims_effect({"subject": wall, "attribute": "芯線", "value": follow, "unit": "mm"},
-                                                          note="図面の修正案：壁芯線を境界線へ")),
+                  [("follow", "境界線に合わせる", dict(claims_effect({"subject": wall, "attribute": "芯線", "value": follow, "unit": "mm"},
+                                                               note="図面の修正案：壁芯線を境界線へ"), applies_drawing_fix=True)),
                    ("unfollow", "追従を外す", {"assumption": {"level": 3, "kind": FOLLOW_KIND, "value": "従わない",
                                                           "scope": subjects}})],
                   claim_ids=[w.claim_id] if w.claim_id else None,
                   basis={"前提": FOLLOW_KIND, "壁の芯線": w.value},
-                  proposal={"kind": "図面の修正案", "text": "壁芯線を境界線の位置へ（「境界線に合わせる」を選んだとき）"})
+                  proposal={"kind": "図面の修正案", "text": "壁芯線を境界線の位置へ（「境界線に合わせる」を選んだとき）",
+                            "drawing_fix": {"element": wall, "attribute": "芯線", "value": follow, "was": w.value,
+                                            "clue_ids": [r["clue_id"] for r in store.all("select clue_id from claim_evidence where claim_id=?", w.claim_id)]
+                                            if w.claim_id else [],
+                                            "source_version_id": store.scalar("select source_version_id from claim where id=?", w.claim_id)
+                                            if w.claim_id else None,
+                                            "how": "壁芯線の端点を境界線の位置へ"}})
 
     # ---------------------------------------------------------------- 例4: the insulation the drawing shows is a layer of the wall type
     for eid in in_scope:

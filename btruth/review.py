@@ -729,3 +729,24 @@ def choose_option(store: Store, project: ProjectFolder, issue_id: str, code: str
         store.conn.rollback()
         raise
     return rid
+
+
+# ---------------------------------------------------------------- stage 6: the person checked the written-back drawing in CAD (M-2)
+def confirm_drawing(store: Store, project: ProjectFolder, writeback_id: str, reason: str | None, reviewed_by: str,
+                    confirm: Callable[[str], bool] | None = None) -> str | None:
+    require_terminal(project.db_path)
+    rows = store.all("select * from writeback where id like ?", writeback_id + "%")
+    if len(rows) != 1:
+        raise ValueError(f"書き戻しが一つに決まりません: {writeback_id}（{len(rows)} 件）")
+    w = rows[0]
+    if not w["generation_id"]:
+        raise ValueError("この書き戻しはファイルを書いていない（元の図面が違ったなど）")
+    text = f"書き戻した図面 {w['new_path']} を、人が CAD で開いて確かめたと記録する\n  理由 {reason or '（なし）'}"
+    confirm = confirm or _confirm_default(project.db_path)
+    if not confirm(text):
+        return None
+    rid = _write_review(store, "generation", w["generation_id"], "人が CAD で確認済み", {"writeback_id": w["id"]}, reason, reviewed_by,
+                        w["base_source_version_id"])
+    _write_premises(store, rid, {("table_load", x[1]) for x in _table_premises(store)}, reviewed_by)
+    store.commit()
+    return rid

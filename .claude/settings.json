@@ -19,6 +19,8 @@
       "Bash(*btruth approve-moves*)",
       "Bash(*btruth resolve-recheck*)",
       "Bash(*btruth choose*)",
+      "Bash(*btruth allow-ifc*)",
+      "Bash(*btruth confirm-drawing*)",
       "Bash(*btruth rule*--set*)",
       "Bash(*sqlite3*)",
       "Bash(*.sqlite*)",

@@ -16,3 +16,6 @@ issue_severity.追加削除.*,記録のみ,,人の決定（v3 Q10）,2026-11-08,
 opening_min_deduct_m2,0.5,m2,人の回答（v2 Q31）,2026-11-05,出口,差し引かない開口の上限
 board_loss_rate,0.10,,人の回答（v2 Q20）,2026-11-05,出口,ボードの割増
 default_storey_height_mm,2700,mm,仮の決定（v3 Q23）,2026-11-08,出口,階高・壁の高さがないときに IFC で押し出す高さ（HeightAssumed を付ける）。第6段で決める
+board_height_extra_mm,100,mm,人の回答（v2 Q17）,2026-11-05,出口,張り上げ高さ H = 天井高 + この値
+board_width_mm,910,mm,人の回答（v2 Q18）,2026-11-05,出口,ボード 1 枚の幅
+board_length_mm,1820,mm,人の回答（v2 Q18）,2026-11-05,出口,ボード 1 枚の長さ

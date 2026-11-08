@@ -2,7 +2,7 @@
 database file directly (G-1 (a), failure F-13).
 
 Stopped (exit code 2):
-  * btruth decide / approve / reject / hold / name / exclude-room / approve-moves / resolve-recheck (stage 4) / choose (stage 5),
+  * btruth decide / approve / reject / hold / name / exclude-room / approve-moves / resolve-recheck (stage 4) / choose (stage 5) / confirm-drawing / allow-ifc (stage 6),
     and btruth rule --set — also when
     called from `python -c`, a here-document, or a subprocess call inside Python;
   * Python code that imports btruth and calls the review API (approve_items, decide, ...);
@@ -20,7 +20,7 @@ import re
 import shlex
 import sys
 
-CONFIRM = {"decide", "approve", "reject", "hold", "name", "exclude-room", "approve-moves", "resolve-recheck", "choose"}
+CONFIRM = {"decide", "approve", "reject", "hold", "name", "exclude-room", "approve-moves", "resolve-recheck", "choose", "confirm-drawing", "allow-ifc"}
 CONFIRM_RE = "|".join(re.escape(c) for c in sorted(CONFIRM))
 SEGMENT_SPLIT = re.compile(r"&&|\|\||;|\||\n")
 # python -c / here-documents that drive btruth from inside Python
@@ -29,7 +29,7 @@ INLINE = [
     re.compile(r"""btruth['"]?\s+(%s)\b""" % CONFIRM_RE),
     re.compile(r"""['"]rule['"]\s*,.*['"]--set['"]"""),
 ]
-API = re.compile(r"\b(approve_items|approve_interpretation|approve_moves|resolve_recheck|choose_option|reject_items|hold_items|hold_issue|decide|name_element|"
+API = re.compile(r"\b(approve_items|approve_interpretation|approve_moves|resolve_recheck|choose_option|confirm_drawing|allow_ifc|reject_items|hold_items|hold_issue|decide|name_element|"
                  r"exclude_room|add_decision|add_adopted|set_rule|review)\s*\(")
 IMPORTS_BTRUTH = re.compile(r"\b(from|import)\s+btruth\b")
 DB_FILE = re.compile(r"(?i)\.(sqlite3?|db)(?![\w])")

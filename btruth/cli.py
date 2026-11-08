@@ -326,6 +326,64 @@ def _judgement_basis(store, review_id) -> str:
     return f"人の判断（根拠 {src['name']}@{src['seq']}、{src['kind']}、格 {rank or '？'}）"
 
 
+def cmd_tables(args) -> int:
+    from btruth.outputs import write_tables
+    project, store = _open(args)
+    with store:
+        out = Path(args.out) if args.out else project.out_dir / "tables"
+        for p in write_tables(store, project, out, recorded_by=_who(args)):
+            print(f"書きました: {p}")
+        print("有効値から計算した（保存しない）。どの時点の値かは generation に記録した。")
+    return 0
+
+
+def cmd_drawing(args) -> int:
+    from btruth.outputs import write_drawing
+    project, store = _open(args)
+    with store:
+        out = write_drawing(store, project, Path(args.out) if args.out else project.out_dir / "generated.dxf", recorded_by=_who(args))
+        print(f"生成した図面を書きました: {out}（レイヤは BT_GEN_。取り込んでも観測にならない）")
+    return 0
+
+
+def cmd_writeback(args) -> int:
+    from btruth.outputs import WritebackRefused, write_back
+    project, store = _open(args)
+    with store:
+        try:
+            wid = write_back(store, project, args.source, Path(args.original), Path(args.out), recorded_by=_who(args))
+        except WritebackRefused as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+        w = store.one("select * from writeback where id=?", wid)
+        print(f"書き戻した図面を書きました: {w['new_path']}（書き戻しの ID {wid}、状態 未確認）")
+        print(f"  元の図面は変えていない。CAD で開いて確かめたら、人が端末で `btruth confirm-drawing {args.folder} --writeback {wid[:8]}` を打つ。")
+    return 0
+
+
+def cmd_writebacks(args) -> int:
+    from btruth.outputs import writeback_status
+    project, store = _open(args)
+    with store:
+        rows = store.all("select * from writeback order by rowid")
+        if not rows:
+            print("書き戻しはまだありません。")
+        for w in rows:
+            print(f"書き戻し {w['id']}  {writeback_status(store, w['id'])}  {w['new_path'] or '（書いていない）'}  反映した判断 {len(json.loads(w['review_ids_json'] or '[]'))}")
+    return 0
+
+
+def cmd_confirm_drawing(args) -> int:
+    from btruth.review import confirm_drawing
+
+    def go(project, store):
+        rid = confirm_drawing(store, project, args.writeback, reason=args.reason, reviewed_by=_who(args), confirm=_confirm_wrapper(args))
+        if rid:
+            print(f"書き戻した図面を確認済みと記録しました（review {rid}）。")
+        return rid
+    return _run_review(args, go)
+
+
 def cmd_values(args) -> int:
     """Read-only: an element's attributes with their effective value (D-1), where it came from, and every claim."""
     from btruth.common import loads
@@ -691,6 +749,27 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--html", action="store_true", help="HTML で書く")
     sp.set_defaults(func=cmd_diff)
 
+    sp = sub.add_parser("tables", help="面積表・仕上表・数量表を有効値から計算して出す（CSV と HTML。保存しない）")
+    common(sp)
+    sp.add_argument("--out", help="書き出すフォルダ（既定: <物件のフォルダ>/out/tables）")
+    sp.set_defaults(func=cmd_tables)
+
+    sp = sub.add_parser("drawing", help="壁の両面の線などを BT_GEN_ のレイヤに書いた DXF を出す（取り込んでも観測にならない）")
+    common(sp)
+    sp.add_argument("--out", help="書き出す先（既定: <物件のフォルダ>/out/generated.dxf）")
+    sp.set_defaults(func=cmd_drawing)
+
+    sp = sub.add_parser("writeback", help="承認した図面の修正案を、元の図面から新しい DXF に書く（元は上書きしない。sha256 を確かめる）")
+    common(sp)
+    sp.add_argument("--source", required=True, help="出どころの呼び名（平面図 など。最新の版に書き戻す）")
+    sp.add_argument("--original", required=True, help="人の元の図面のファイル（取り込んだ版と同じ中身か確かめる）")
+    sp.add_argument("--out", required=True, help="新しいファイル")
+    sp.set_defaults(func=cmd_writeback)
+
+    sp = sub.add_parser("writebacks", help="書き戻しの一覧と状態（未確認／人が CAD で確認済み）")
+    common(sp)
+    sp.set_defaults(func=cmd_writebacks)
+
     sp = sub.add_parser("values", help="要素の属性ごとの有効値と、その出どころ、全部の言い分（読むだけ）")
     common(sp)
     sp.add_argument("--element", required=True, help="要素の ID（先頭でよい）")
@@ -779,6 +858,12 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--exclude", nargs="*", help="一覧から外す item")
     sp.add_argument("--reason", help="理由（人が書く）")
     sp.set_defaults(func=cmd_approve_moves)
+
+    sp = confirm_parser("confirm-drawing", "書き戻した図面を、人が CAD で開いて確かめたと記録する（M-2）")
+    common(sp)
+    sp.add_argument("--writeback", required=True, help="書き戻しの ID（先頭でよい）")
+    sp.add_argument("--reason", help="理由（人が書く）")
+    sp.set_defaults(func=cmd_confirm_drawing)
 
     sp = confirm_parser("choose", "要確認の選択肢を選ぶ（選択肢に書かれた採用・前提を書く。決定 13）")
     common(sp)
