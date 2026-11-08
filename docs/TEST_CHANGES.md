@@ -16,3 +16,4 @@
 | 2026-11-08（第4段） | `tests/helpers.py` | `step2_like_dxf`（step2 と同じ並びの架空の図面。間仕切・部屋割り線・扉の位置と原点を変えられる）と `step2_fixture_at`（固定の解釈を原点に合わせ、開口と扉を足す）を足した。既存のヘルパは変えていない | 第4段のテストのため |
 | 2026-11-08（第5段） | `tests/test_guard_confirm.py` | 止める例に `choose`（コマンドと API の呼び出し）を足し、`CONFIRM` と deny の一覧にあることを確かめるテストを足した | 第5段で確定のコマンド `choose` を作った（依頼書 §2-6） |
 | 2026-11-08（第5段） | `tests/test_identity.py`（変えていない） | 第4段のテストは変えずに通る。承認の後の照らしは整合の照らしに置き換わったが、`step2_boundary_only` のずれは一件のまま | 確認のため記録 |
+| 2026-11-08（第6段） | `tests/test_cli_stage3.py::test_decide_name_exclude_room_through_the_command`、`tests/test_cli_stage5.py`（`issue_line`、要確認の種類の読み方、閉じたことの確かめ） | `btruth issues` の出力の読み方を、新しい形（`■ <種類>［<重さ>］`、`要確認の ID：`、`対象：… 要素 <ID>`）に合わせた。確かめる中身は変えていない | 第6段の依頼書 §1：要確認の表示を人が読める文にした（JSON は `--detail` だけ） |

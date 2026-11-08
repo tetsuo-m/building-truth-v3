@@ -28,9 +28,9 @@ def prepared(tmp_path):
 
 
 def issue_line(stdout: str, kind: str) -> str:
-    lines = stdout.splitlines()
-    i = next(n for n, l in enumerate(lines) if l.startswith(kind + " "))
-    return lines[i + 1].split("要確認 ")[1].split()[0]
+    """The issue's id from the block of `btruth issues` that starts with ■ <kind>［ (第6段の表示)."""
+    block = stdout.split(f"■ {kind}［")[1].split("■ ")[0]
+    return [l for l in block.splitlines() if "要確認の ID：" in l][0].split("要確認の ID：")[1].strip()
 
 
 def test_the_check_runs_after_approval_and_choose_applies_an_option(tmp_path):
@@ -49,11 +49,11 @@ def test_the_check_runs_after_approval_and_choose_applies_an_option(tmp_path):
     r = run("choose", project.folder, "--issue", iid, "--option", "adopt_higher", "--reason", "議事録どおり", stdin="y\n", terminal=True)
     assert r.returncode == 0, r.stderr
     assert r.stdout.index("採用を書く") < r.stdout.index("確定しますか")
-    assert "決定が未反映 " not in run("issues", project.folder).stdout
+    assert "■ 決定が未反映［" not in run("issues", project.folder).stdout
     # the check can be run at any time; the answered issue is not raised again
     r = run("check", project.folder)
     assert r.returncode == 0, r.stderr
-    assert "決定が未反映 " not in run("issues", project.folder).stdout
+    assert "■ 決定が未反映［" not in run("issues", project.folder).stdout
 
 
 def test_one_item_approval_also_runs_the_check(tmp_path):
@@ -88,7 +88,7 @@ def test_the_trial_flow_for_the_person_with_the_ai_reading_of_step5(tmp_path):
     assert run("show", folder).returncode == 0          # the screens run on tables, minutes and the new issue kinds
     assert run("report", folder).returncode == 0
     out = run("issues", folder).stdout
-    kinds = sorted(l.split(" [")[0] for l in out.splitlines() if " [" in l and not l.startswith(" "))
+    kinds = sorted(l[2:].split("［")[0] for l in out.splitlines() if l.startswith("■ "))
     assert kinds == ["名前がない空間", "決定が未反映", "議事録の未決"], out
     for code in ("type_width", "door_width", "opening_width", "keep_lower"):
         assert f"［{code}］" in out
@@ -103,7 +103,7 @@ def test_the_trial_flow_for_the_person_with_the_ai_reading_of_step5(tmp_path):
     assert "幅: 900  [採用]" in r.stdout and "210002300" not in r.stdout
     r = run("values", folder, "--element", door_type[:8])
     assert "幅: 800  [承認済みの観測]" in r.stdout and "観測 決定  議事録4@1  900" in r.stdout
-    assert "決定が未反映 " not in run("issues", folder).stdout
+    assert "■ 決定が未反映［" not in run("issues", folder).stdout
 
 
 def test_choose_refuses_outside_a_terminal(tmp_path):

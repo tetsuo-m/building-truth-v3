@@ -82,22 +82,103 @@ def frame_of_element(store: Store, element_id: str) -> dict | None:
     return frame_of_version(store, row["source_version_id"]) if row else None
 
 
-def issue_lines(store: Store, project, issues: list[dict]) -> list[str]:
-    """The lines of `btruth issues`, with coordinates in the grid frame and one line about the frame."""
-    from btruth.effective import effective_name, proposed_kind_of
+def fmt(value, frame: dict | None = None) -> str:
+    """A value as a person reads it: numbers plain, lists of points as coordinates, dicts as 「名 値・名 値」."""
+    value = shift(value, frame) if frame else value
+    if isinstance(value, dict):
+        return "・".join(f"{k} {fmt(v)}" for k, v in value.items())
+    if isinstance(value, list):
+        if value and all(_is_point(x) for x in value):
+            return "〜".join("(" + ", ".join(f"{c:g}" for c in x[:2]) + ")" for x in value)
+        return "、".join(fmt(x) for x in value)
+    if isinstance(value, float):
+        return f"{value:g}"
+    return str(value)
+
+
+def element_label(store: Store, project, eid: str) -> str:
+    from btruth.effective import effective_name, effective_value, proposed_kind_of, proposed_value
+    kind = proposed_kind_of(store, eid) or "要素"
+    name = effective_name(store, project, eid)
+    if not name:
+        tag = effective_value(store, project, eid, "符号", through_type=False)
+        name = tag.value if tag.present else proposed_value(store, eid, "符号")
+    return f"{kind}{(' ' + str(name)) if name else ''}"
+
+
+def issue_sentence(store: Store, project, i: dict, frame) -> str:
+    """What differs, in one or two plain sentences (第6段の依頼書 §1)."""
+    f = i.get("facts") or {}
+    k = i["kind"]
+    subj = element_label(store, project, i["subject_ids"][0]) if i["subject_ids"] else "要素"
+    attr = f.get("属性") or (i.get("basis") or {}).get("属性") or ""
+    if k == "決定が未反映":
+        hi, lo = f.get("正とみなす", {}), f.get("従", {})
+        return (f"{subj} の「{attr}」が食い違っている。{hi.get('出どころ')}（格 {hi.get('格')}）は {fmt(hi.get('値'))}、"
+                f"{lo.get('出どころ')}（格 {lo.get('格')}）は {fmt(lo.get('値'))}。格の高い {hi.get('出どころ')} を正とみなす。確定は人が選ぶ。")
+    if k == "決定が未反映（人の判断と食い違う）":
+        return (f"{subj} の「{attr}」：人の判断（格 {f.get('判断の格')}）は {fmt(f.get('判断'))}、{f.get('出どころ')}"
+                f"（格 {f.get('議事録の格')}）の決定は {fmt(f.get('議事録'))}。黙って書き換えない。")
+    if k == "言い分の食い違い（主と従）":
+        why = f"（{f['理由']}）" if f.get("理由") else ""
+        return (f"{subj} の「{attr}」：基準の {f.get('基準')} は {fmt(f.get('主の値'), frame)}、{f.get('従')} は "
+                f"{fmt(f.get('従の値'), frame)}。{why}")
+    if k == "設計図と施工図の食い違い":
+        design = "、".join(f"{d['出どころ']} {fmt(d['値'])}" for d in f.get("設計図", []))
+        site = f.get("施工図", {})
+        return f"{subj} の「{attr}」：設計図は {design}、施工図 {site.get('出どころ')} は {fmt(site.get('値'))}。どちらが正かは決めない。"
+    if k == "議事録の未決":
+        return f"{f.get('出どころ')} に、{subj} の「{attr}」について「{fmt(f.get('文'))}」とある（未決。格を持たない）。"
+    if k == "言い分の食い違い（型と実物）":
+        if attr == "層の例外":
+            return f"{subj} の注記は {fmt(f.get('実物の注記'))}、型は {fmt(f.get('型'))}。注記を黙って勝たせない。"
+        return f"{subj} の「{attr}」が、型と実物で食い違っている。"
+    if k == "名前がない空間":
+        return f"名前のない閉じた空間（{subj}）がある。黙って名前を付けない。"
+    if k == "壁と境界のずれ":
+        return f"{subj} と、その境界が {fmt(f.get('ずれ_mm'))} mm ずれている（壁芯は部屋割り線に従う、の前提）。"
+    if k == "建具表にない符号":
+        return f"{subj}：符号 {f.get('符号')} が建具表にない。建具の種類は AI の提案のまま、承認まで数えない。"
+    if k == "柱の偏心が上限を超える":
+        return f"{subj} が通り芯の交点から {fmt(f.get('偏心_mm'))} mm 離れている（上限 {fmt(f.get('上限_mm'))} mm）。"
+    if k == "向かい合う境界の種類の食い違い":
+        return f"同じ線の両側で、境界の種類（物理的／仮想）が {fmt(f.get('区間'), frame)} で食い違っている。"
+    if k == "壁が途中で終わる":
+        return f"{subj} の {fmt(f.get('uncovered_intervals_mm'))}（境界の始点からの mm）に、壁も開口もない。"
+    if k == "壁が境界の外に出ている":
+        return f"{subj} が、境界の区間から {fmt(round(f.get('outside_mm', 0), 1))} mm 外に出ている。"
+    if k == "移動の承認待ち":
+        return f"移動（意味の変更なし）の新しい位置が {len(f.get('item_ids') or [])} 件、まとめての承認を待っている。"
+    return str(f.get("note") or "（詳しくは --detail）")
+
+
+def issue_lines(store: Store, project, issues: list[dict], folder: str | None = None, detail: bool = False) -> list[str]:
+    """`btruth issues`: one block per issue, in plain sentences, with the command to type (第6段の依頼書 §1).
+    The issue's id is the one to type; the elements are shown for reference. JSON only with `detail`."""
     lines, frames = [], []
-    for i in issues:
-        subjects = "、".join(f"{proposed_kind_of(store, s) or '要素'} 要素 {s} {effective_name(store, project, s) or ''}".rstrip()
-                             for s in i["subject_ids"])
-        held = "（保留中）" if i.get("held") else ""
-        lines.append(f"{i['kind']} [{i['severity']}]{held}  {subjects}")
-        lines.append(f"    要確認 {i['id']}  選択肢: {' / '.join(o['label'] + '［' + o['code'] + '］' for o in i['options'])}")
-        if i.get("proposal"):
-            lines.append(f"    修正案: {json.dumps(i['proposal'], ensure_ascii=False)[:200]}")
+    folder = folder or "<物件のフォルダ>"
+    for n, i in enumerate(issues, start=1):
         frame = next((f for f in (frame_of_element(store, s) for s in i["subject_ids"]) if f), None)
         frames.append(frame)
-        if i.get("facts"):
-            lines.append(f"    事実: {json.dumps(shift_facts(i['facts'], frame), ensure_ascii=False)[:300]}")
+        held = "・保留中" if i.get("held") else ""
+        lines.append(f"■ {i['kind']}［{i['severity']}{held}］")
+        lines.append(f"  要確認の ID：{i['id']}")
+        if i["subject_ids"]:
+            lines.append("  対象：" + "、".join(f"{element_label(store, project, s)}（要素 {s} ）" for s in i["subject_ids"]))
+        lines.append("  何が：" + issue_sentence(store, project, i, frame))
+        if i.get("proposal") and i["proposal"].get("text"):
+            lines.append(f"  修正案：{i['proposal']['text']}")
+        if i["options"]:
+            lines.append("  選べること：")
+            for o in i["options"]:
+                lines.append(f"    ［{o['code']}］ {o['label']}")
+            first = i["options"][0]["code"]
+            lines.append(f"  打つ例：.venv\\Scripts\\python -m btruth choose {folder} --issue {i['id'][:8]} --option {first} --reason \"…\"")
+        if detail:
+            lines.append(f"  事実（--detail）：{json.dumps(shift_facts(i['facts'], frame), ensure_ascii=False)}")
+            if i.get("proposal"):
+                lines.append(f"  修正案（--detail）：{json.dumps(i['proposal'], ensure_ascii=False)}")
+        lines.append("")
     if any(frames):
         lines.append(frame_note(frames))
     return lines

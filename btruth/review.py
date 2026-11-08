@@ -92,8 +92,33 @@ def _confirm_default(db_path: Path) -> Callable[[str], bool]:
     return prompt_confirm
 
 
+def flush_pending_input() -> None:
+    """Throw away what was typed (or pasted) before the question, so that only the answer typed now counts
+    (the person's trial of stage 5: a pasted next command line was read as the answer). Only for a real terminal:
+    a pipe (the tests, `echo y |`) is left as it is."""
+    try:
+        if not (sys.stdin and sys.stdin.isatty()):
+            return
+    except (AttributeError, ValueError):
+        return
+    try:
+        import msvcrt                                   # Windows
+        while msvcrt.kbhit():
+            msvcrt.getwch()
+        return
+    except ImportError:
+        pass
+    try:
+        import termios                                  # POSIX
+        termios.tcflush(sys.stdin.fileno(), termios.TCIFLUSH)
+    except (ImportError, OSError, ValueError):
+        pass
+
+
 def prompt_confirm(listing: str) -> bool:
     print(listing)
+    sys.stdout.flush()
+    flush_pending_input()
     answer = input("確定しますか？ (y/N) ").strip().lower()
     return answer in ("y", "yes")
 
@@ -243,8 +268,8 @@ def _move_line(store: Store, project: ProjectFolder, item, status: str, basis: s
     else:
         before = claim_text(store, prev["value_json"], prev["source_version_id"]) + ("（未承認）" if pending else "")
     after = claim_text(store, c["value_json"], c["source_version_id"])
-    return (f"[{status}] 移動 {eid}  {kind} {name}  {c['attribute']}: {before} → {after}  "
-            f"{item['reason'] or ''}{basis}").rstrip()
+    return (f"[{status}] item {item['id'][:8]}  移動 {kind} {name}  {c['attribute']}: {before} → {after}  "
+            f"{item['reason'] or ''}{basis}  ／参考：要素 {eid} ").rstrip()
 
 
 def describe_item(store: Store, project: ProjectFolder, item) -> str:
@@ -265,19 +290,19 @@ def describe_item(store: Store, project: ProjectFolder, item) -> str:
         eid = item["element_id"]
         kind = proposed_kind_of(store, eid) or "？"
         name = effective_name(store, project, eid) or _proposed_name(store, eid) or ""
-        return f"[{status}] 要素 {eid}  {kind} {name}{conf}{basis}  {item['reason'] or ''}".rstrip()
+        return f"[{status}] item {item['id'][:8]}  {kind} {name}{conf}{basis}  {item['reason'] or ''}  ／参考：要素 {eid} ".rstrip()
     if item["relation_id"]:
         r = store.one("select kind, from_element_id, to_element_id from relation where id=?", item["relation_id"])
-        return (f"[{status}] つながり {item['relation_id']}  {r['kind']}  {proposed_kind_of(store, r['from_element_id']) or '?'} "
+        return (f"[{status}] item {item['id'][:8]}  つながり {r['kind']}  {proposed_kind_of(store, r['from_element_id']) or '?'} "
                 f"{(r['from_element_id'] or '')[:8]} → {proposed_kind_of(store, r['to_element_id']) or '?'} {(r['to_element_id'] or '')[:8]}{conf}")
     if item["claim_id"]:
         from btruth.display import claim_text
         c = store.one("select subject_id, attribute, value_json, source_version_id from claim where id=?", item["claim_id"])
         shown = claim_text(store, c["value_json"], c["source_version_id"])
-        return f"[{status}] 言い分 {item['claim_id']}  {proposed_kind_of(store, c['subject_id']) or '?'} {c['subject_id'][:8]} {c['attribute']}={shown}{conf}{basis}"
+        return f"[{status}] item {item['id'][:8]}  言い分 {proposed_kind_of(store, c['subject_id']) or '?'} {c['subject_id'][:8]} {c['attribute']}={shown}{conf}{basis}"
     if item["assumption_id"]:
         a = store.one("select level, kind, value_json from assumption where id=?", item["assumption_id"])
-        return f"[{status}] 前提 {item['assumption_id']}  段 {a['level']} {a['kind']}={a['value_json']}{conf}{basis}"
+        return f"[{status}] item {item['id'][:8]}  前提 段 {a['level']} {a['kind']}={a['value_json']}{conf}{basis}"
     return f"[{status}] {item['kind']} {item['id']}  {item['reason'] or ''}"
 
 

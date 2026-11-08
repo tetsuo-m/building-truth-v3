@@ -60,7 +60,8 @@ def test_decide_name_exclude_room_through_the_command(tmp_path):
     assert run("approve", project.folder, "--interpretation", interp, "--reason", "ok", stdin="y\n", terminal=True).returncode == 0
     r = run("issues", project.folder)
     assert "名前がない空間" in r.stdout
-    room_id = [line for line in r.stdout.splitlines() if "名前がない空間" in line][0].split("要素 ")[1].split()[0]
+    block = r.stdout.split("■ 名前がない空間")[1].split("■ ")[0]
+    room_id = [line for line in block.splitlines() if line.strip().startswith("対象：")][0].split("要素 ")[1].split()[0]
     r = run("name", project.folder, "--element", room_id, "--name", "倉庫", "--reason", "確認した", stdin="y\n", terminal=True)
     assert r.returncode == 0, r.stderr
     r = run("issues", project.folder)

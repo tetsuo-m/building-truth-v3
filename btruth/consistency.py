@@ -99,6 +99,11 @@ def _tolerance(rules: dict, attribute: str, src_a, src_b) -> float:
     return float(rules.get("same_position_mm", "0.1"))
 
 
+def _fmt(value) -> str:
+    from btruth.display import fmt
+    return fmt(value)
+
+
 def primary_discipline(store: Store, project: ProjectFolder, element_id: str) -> str | None:
     """The element's primary discipline, from its kind's core rows of authority.csv (C-7, E-3): the 分野 of the
     sources whose class matches the primary source of a core attribute. Computed, not stored."""
@@ -407,7 +412,7 @@ def check(store: Store, project: ProjectFolder, recorded_by: str, scope: list[st
                        "note": "格の高い書類の決定が、主の出どころにまだ反映されていない（C-10）。確定は人"},
                       options, attribute=attr, claim_ids=[higher["claim"]["id"], prim["claim"]["id"]],
                       proposal={"kind": "書類の修正案", "対象": prim["src"]["name"],
-                                "text": f"{prim['src']['name']} の {tag or ''} の {attr} を {dumps(higher['value'])} に直す"})
+                                "text": f"{prim['src']['name']} の {tag or ''} の {attr} を {_fmt(higher['value'])} に直す"})
                 base = higher
             elif prim:
                 for x in design:
@@ -422,7 +427,7 @@ def check(store: Store, project: ProjectFolder, recorded_by: str, scope: list[st
                                           basis_version=x["src"]["vid"]))],
                           attribute=attr, claim_ids=[prim["claim"]["id"], x["claim"]["id"]],
                           proposal={"kind": "図面・書類の修正案", "対象": x["src"]["name"],
-                                    "text": f"{x['src']['name']} の {attr} を {dumps(prim['value'])} に（基準 {prim['src']['name']}）"})
+                                    "text": f"{x['src']['name']} の {attr} を {_fmt(prim['value'])} に（基準 {prim['src']['name']}）"})
             for x in site:
                 if all(_same(x["value"], d["value"], _tolerance(rules, attr, x["src"], d["src"])) for d in design):
                     continue
@@ -477,17 +482,32 @@ def check(store: Store, project: ProjectFolder, recorded_by: str, scope: list[st
                 tc = store.one("select source_version_id from claim where id=?", tw.claim_id) if tw.claim_id else None
                 tol = _tolerance(rules, "幅", _source(store, oc["source_version_id"]) if oc else None,
                                  _source(store, tc["source_version_id"]) if tc else None)
+                judged = tw.status == "採用"
+                if judged:      # a type value changed by a judgement: always a drawing fix (人の決定 2026-11-08)
+                    tol = 0.0
                 if not _same(ow.value, tw.value, tol):
                     drawing = _source(store, oc["source_version_id"]) if oc else None
                     dname = drawing["name"] if drawing else "図面"
+                    clue_ids = [r["clue_id"] for r in store.all("select clue_id from claim_evidence where claim_id=?", ow.claim_id)] \
+                        if ow.claim_id else []
+                    if not clue_ids:
+                        item = store.one("select id from interpretation_item where element_id=? and kind='要素を作る'", eid)
+                        clue_ids = [r["clue_id"] for r in store.all("select clue_id from interpretation_evidence where item_id=? "
+                                                                    "and clue_id is not null", item["id"])] if item else []
+                    reason = ("型の値が人の判断で変わった（許容差によらず図面の修正案を出す。人の決定 2026-11-08）" if judged
+                              else f"許容差 {tol} mm を超えて違う")
                     issue("言い分の食い違い（主と従）", [eid, t], {"属性": "幅", "基準": "建具表（ふさぐ建具の型の呼び幅。C-2d）", "主の値": tw.value,
-                                                           "従": f"{dname}（図面の開口）", "従の値": ow.value, "許容差_mm": tol},
-                          [("fix_secondary", f"建具表に合わせる（{dname}の修正案）", {}),
+                                                           "従": f"{dname}（図面の開口）", "従の値": ow.value, "許容差_mm": tol,
+                                                           "理由": reason},
+                          [("fix_secondary", f"建具表に合わせる（{dname}の修正案を承認する）", {"applies_drawing_fix": True}),
                            ("adopt_secondary", "この開口の幅を採る（採用）",
                             claims_effect({"subject": eid, "attribute": "幅", "value": ow.value, "unit": "mm"}))],
                           attribute="幅", claim_ids=[x for x in (ow.claim_id, tw.claim_id) if x],
                           proposal={"kind": "図面の修正案", "対象": dname,
-                                    "text": f"{dname} の開口の幅を {tw.value} に（建具表の呼び幅。許容差 {tol} mm を超える）"})
+                                    "text": f"{dname} の開口の幅を {tw.value} に（{reason}）",
+                                    "drawing_fix": {"element": eid, "attribute": "幅", "value": tw.value, "was": ow.value,
+                                                    "clue_ids": clue_ids, "source_version_id": oc["source_version_id"] if oc else None,
+                                                    "how": "扉のブロックの尺度を 幅の比 で掛ける"}})
 
     offset_elements: set = set()
     # ---------------------------------------------------------------- a wall away from its boundaries while following them (例1)
@@ -529,6 +549,50 @@ def check(store: Store, project: ProjectFolder, recorded_by: str, scope: list[st
                   claim_ids=[w.claim_id] if w.claim_id else None,
                   basis={"前提": FOLLOW_KIND, "壁の芯線": w.value},
                   proposal={"kind": "図面の修正案", "text": "壁芯線を境界線の位置へ（「境界線に合わせる」を選んだとき）"})
+
+    # ---------------------------------------------------------------- 例4: the insulation the drawing shows is a layer of the wall type
+    for eid in in_scope:
+        if kinds.get(eid) != "壁":
+            continue
+        ins = effective_value(store, project, eid, "断熱材", through_type=False)
+        if not ins.present:
+            continue
+        layers = layers_of(store, project, eid)
+        if not layers:
+            continue
+        names = [str(l["材料"] or "") for l in layers]
+        if not any(str(ins.value) in n or n in str(ins.value) for n in names if n):
+            types = types_of(store, eid)
+            issue("言い分の食い違い（主と従）", [eid] + types,
+                  {"属性": "断熱材", "基準": "壁種表（層の組み立て）", "主の値": names, "従": "図面の記号（凡例で読んだ）", "従の値": ins.value},
+                  [("fix_secondary", "壁種表どおり（図面の記号の修正案）", {}), ("change_type", "壁種の層に足す（型の判断）", {})],
+                  attribute="断熱材", claim_ids=[ins.claim_id] if ins.claim_id else None,
+                  proposal={"kind": "書類の修正案", "text": f"壁種の層に {ins.value} がない。壁種表に足すか、図面の記号を直す"})
+
+    # ---------------------------------------------------------------- 例2・v2 Q7: a column's offset from its grid crossing
+    offset_max = float(rules.get("column_offset_max_mm", "500"))
+    for eid in in_scope:
+        if kinds.get(eid) != "柱":
+            continue
+        pos = effective_value(store, project, eid, "位置")
+        axes = [effective_value(store, project, r["to_element_id"], "線分") for r in relations_from(store, eid, "載る")]
+        segs = [geometry.segment(a.value) for a in axes if a.present]
+        segs = [x for x in segs if x]
+        if not (pos.present and len(segs) >= 2 and isinstance(pos.value, list)):
+            continue
+        from btruth.identity import _seg_intersection
+        cross = None
+        for i in range(len(segs)):
+            for j in range(i + 1, len(segs)):
+                cross = cross or _seg_intersection(segs[i], segs[j], tol_pos)
+        if cross is None:
+            continue
+        off = math.dist((float(pos.value[0]), float(pos.value[1])), cross)
+        if off > offset_max:
+            issue("柱の偏心が上限を超える", [eid], {"偏心_mm": off, "上限_mm": offset_max, "交点": [cross[0], cross[1]],
+                                                "note": "上限の中の偏心は普通の納まり（要確認にしない。D-8、v2 Q7）"},
+                  [("keep", "この偏心でよい（理由を書く）", {}), ("fix", "図面の修正案（通り芯の交点へ）", {})],
+                  attribute="位置", claim_ids=[pos.claim_id] if pos.claim_id else None)
 
     # ---------------------------------------------------------------- the registration kinds, on effective values (I-2)
     from btruth.checks import OPTIONS, wall_range_facts

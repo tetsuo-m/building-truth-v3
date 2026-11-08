@@ -208,7 +208,7 @@ def cmd_issues(args) -> int:
             print("開いている要確認はありません。")
             return 0
         from btruth.display import issue_lines
-        for line in issue_lines(store, project, issues):
+        for line in issue_lines(store, project, issues, folder=args.folder, detail=args.detail):
             print(line)
     return 0
 
@@ -657,8 +657,9 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--kind", help="要素の種類で絞る（壁、部屋、…）")
     sp.set_defaults(func=cmd_items)
 
-    sp = sub.add_parser("issues", help="開いている要確認の一覧")
+    sp = sub.add_parser("issues", help="開いている要確認の一覧（何が食い違っているか、選べること、打つコマンドの例）")
     common(sp)
+    sp.add_argument("--detail", action="store_true", help="事実と修正案を JSON でも出す")
     sp.set_defaults(func=cmd_issues)
 
     sp = sub.add_parser("show", help="理解の確認の画面（HTML）を書く。要素をクリックすると根拠の手掛かりが光る")
