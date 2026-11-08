@@ -1,11 +1,13 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "btruth"
 version = "0.6.0"
 description = "building-truth v3: the vessel (SQLite) and the entrance (readers, intake) for drawings and documents"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.11"
 dependencies = [
     "ezdxf>=1.4",
