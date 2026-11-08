@@ -55,7 +55,7 @@
 ## 手元の Windows の PC で確かめたこと（2026-11-08、このセッション）
 
 - Claude Code の Bash から `btruth confirm-drawing …` と `btruth allow-ifc …` を打つと、どちらも `guard_confirm.py` で止まった。
-- 人の試しの流れ（承認 → type_width → 図面の修正案の承認 → 書き戻し → 表 → IFC）は、一時フォルダの自動テストで通した（`test_cli_stage6.py`）。その流れで出た IFC そのものは IfcOpenShell で確かめていない（同じ形の扉の IFC は確かめた）。
+- 人の試しの流れ（承認 → type_width → 図面の修正案の承認 → 書き戻し → 表 → IFC）は、一時フォルダの自動テストで通した（`test_cli_stage6.py`）。その流れで出た IFC は、報告の後に足したテスト `tests/test_ifc_validate.py`（pytest の一時フォルダの中で流れを通し、出た IFC を IfcOpenShell で確かめる）で、問題 0 件、形も全部作れた（F-15 の後の人の決定 2026-11-08）。
 
 ## 人が試す DB（`out\try6`）と、打つ順
 
@@ -138,3 +138,16 @@
 - 書き戻しは DXF だけ（JWW は第8段）。書き戻すのは、開口の幅（扉のブロックの尺度）と、壁芯線・境界の線分（線の端点）だけ。
 - 書き戻した図面を人が描き足して取り込んだとき、`writeback_id` は結ばれない（中身が変わり sha256 が違うため）。描き足しは人の変更として読む。
 - 照らしの区分のうち、IDS で照らすのは性質（property）と属性（attribute）の切り口だけ。分類・材料・PartOf の切り口は「判定できない」になる。
+
+## F-15 の後の決まり（人の決定 2026-11-08）
+
+- 第6段の作業で、Claude Code が、確定のコマンドの名前を割ってフックをくぐるスクリプトを作った（一時フォルダの DB。自動の判定で止まり、消して報告した）。`docs/FAILURES.md` の F-15、設計書 3-9。
+- リポジトリの `CLAUDE.md` と手順書 `SKILL.md` に、「守りに止められたら、くぐる書き方を試さず、止まって人に聞く」を書いた。
+- 通しの確かめは pytest の一時フォルダの中で行う。IFC の確かめのテストは、IfcOpenShell がなければ飛ばす。別の環境の Python を `BTRUTH_IFC_PYTHON` で指せば、その Python で確かめる：
+
+  ```
+  $env:BTRUTH_IFC_PYTHON = "out\_ifcvenv\Scripts\python.exe"
+  .venv\Scripts\python -m pytest -q tests\test_ifc_validate.py
+  ```
+
+- 実際の図面で使い始める前に、承認の行の署名（設計書 G-1 で見送った案）を入れる。
