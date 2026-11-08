@@ -1,0 +1,1270 @@
+{
+ "agent": {
+  "name": "Claude Code",
+  "kind": "Claude Code",
+  "model": "claude-fable-5-1",
+  "version": "2026-11-08",
+  "instructions_sha256": null
+ },
+ "source_versions": [
+  "平面図@1",
+  "壁種表@1",
+  "仕上表@1"
+ ],
+ "summary": "Claude Code の読み：一部屋（101 事務室）、外壁 4、通り芯 4、壁種 WT-3、天井高 2700",
+ "assumptions": [
+  {
+   "ref": "a_center_follows",
+   "level": 1,
+   "kind": "壁芯は部屋割り線に従う",
+   "value": "従う",
+   "confidence": 0.9,
+   "reason": "WALL_CENTER と ROOM_BOUNDARY の線が、すべての辺で同じ位置にある",
+   "evidence": [
+    {
+     "clue": "平面図@1#13",
+     "role": "主の根拠"
+    },
+    {
+     "clue": "平面図@1#14",
+     "role": "主の根拠"
+    }
+   ]
+  }
+ ],
+ "elements": [
+  {
+   "ref": "axis_X1",
+   "kind": "通り芯",
+   "confidence": 0.97,
+   "reason": "GRID の線の端に符号「X1」の文字と丸がある",
+   "evidence": [
+    {
+     "clue": "平面図@1#1",
+     "role": "主の根拠",
+     "reason": "通り芯の線"
+    },
+    {
+     "clue": "平面図@1#3",
+     "role": "主の根拠",
+     "reason": "符号"
+    },
+    {
+     "clue": "平面図@1#2",
+     "role": "補助",
+     "reason": "符号を囲む丸"
+    }
+   ],
+   "claims": [
+    {
+     "attribute": "符号",
+     "value": "X1",
+     "confidence": 0.97,
+     "evidence": [
+      {
+       "clue": "平面図@1#3",
+       "role": "主の根拠"
+      }
+     ]
+    },
+    {
+     "attribute": "線分",
+     "value": [
+      [
+       0.0,
+       -1500.0
+      ],
+      [
+       0.0,
+       5500.0
+      ]
+     ],
+     "unit": "mm",
+     "confidence": 0.97,
+     "evidence": [
+      {
+       "clue": "平面図@1#1",
+       "role": "主の根拠"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "ref": "axis_X2",
+   "kind": "通り芯",
+   "confidence": 0.97,
+   "reason": "GRID の線の端に符号「X2」の文字と丸がある",
+   "evidence": [
+    {
+     "clue": "平面図@1#4",
+     "role": "主の根拠",
+     "reason": "通り芯の線"
+    },
+    {
+     "clue": "平面図@1#6",
+     "role": "主の根拠",
+     "reason": "符号"
+    },
+    {
+     "clue": "平面図@1#5",
+     "role": "補助",
+     "reason": "符号を囲む丸"
+    }
+   ],
+   "claims": [
+    {
+     "attribute": "符号",
+     "value": "X2",
+     "confidence": 0.97,
+     "evidence": [
+      {
+       "clue": "平面図@1#6",
+       "role": "主の根拠"
+      }
+     ]
+    },
+    {
+     "attribute": "線分",
+     "value": [
+      [
+       6000.0,
+       -1500.0
+      ],
+      [
+       6000.0,
+       5500.0
+      ]
+     ],
+     "unit": "mm",
+     "confidence": 0.97,
+     "evidence": [
+      {
+       "clue": "平面図@1#4",
+       "role": "主の根拠"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "ref": "axis_Y1",
+   "kind": "通り芯",
+   "confidence": 0.97,
+   "reason": "GRID の線の端に符号「Y1」の文字と丸がある",
+   "evidence": [
+    {
+     "clue": "平面図@1#7",
+     "role": "主の根拠",
+     "reason": "通り芯の線"
+    },
+    {
+     "clue": "平面図@1#9",
+     "role": "主の根拠",
+     "reason": "符号"
+    },
+    {
+     "clue": "平面図@1#8",
+     "role": "補助",
+     "reason": "符号を囲む丸"
+    }
+   ],
+   "claims": [
+    {
+     "attribute": "符号",
+     "value": "Y1",
+     "confidence": 0.97,
+     "evidence": [
+      {
+       "clue": "平面図@1#9",
+       "role": "主の根拠"
+      }
+     ]
+    },
+    {
+     "attribute": "線分",
+     "value": [
+      [
+       -1500.0,
+       0.0
+      ],
+      [
+       7500.0,
+       0.0
+      ]
+     ],
+     "unit": "mm",
+     "confidence": 0.97,
+     "evidence": [
+      {
+       "clue": "平面図@1#7",
+       "role": "主の根拠"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "ref": "axis_Y2",
+   "kind": "通り芯",
+   "confidence": 0.97,
+   "reason": "GRID の線の端に符号「Y2」の文字と丸がある",
+   "evidence": [
+    {
+     "clue": "平面図@1#10",
+     "role": "主の根拠",
+     "reason": "通り芯の線"
+    },
+    {
+     "clue": "平面図@1#12",
+     "role": "主の根拠",
+     "reason": "符号"
+    },
+    {
+     "clue": "平面図@1#11",
+     "role": "補助",
+     "reason": "符号を囲む丸"
+    }
+   ],
+   "claims": [
+    {
+     "attribute": "符号",
+     "value": "Y2",
+     "confidence": 0.97,
+     "evidence": [
+      {
+       "clue": "平面図@1#12",
+       "role": "主の根拠"
+      }
+     ]
+    },
+    {
+     "attribute": "線分",
+     "value": [
+      [
+       -1500.0,
+       4000.0
+      ],
+      [
+       7500.0,
+       4000.0
+      ]
+     ],
+     "unit": "mm",
+     "confidence": 0.97,
+     "evidence": [
+      {
+       "clue": "平面図@1#10",
+       "role": "主の根拠"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "ref": "type_WT3",
+   "kind": "壁種",
+   "confidence": 0.95,
+   "reason": "壁種表の唯一の行",
+   "evidence": [
+    {
+     "clue": "壁種表@1#1",
+     "role": "主の根拠"
+    }
+   ],
+   "claims": [
+    {
+     "attribute": "符号",
+     "value": "WT-3",
+     "confidence": 0.95,
+     "evidence": [
+      {
+       "clue": "壁種表@1#1",
+       "role": "主の根拠"
+      }
+     ]
+    },
+    {
+     "attribute": "厚さ",
+     "value": 100,
+     "unit": "mm",
+     "confidence": 0.95,
+     "evidence": [
+      {
+       "clue": "壁種表@1#1",
+       "role": "主の根拠"
+      }
+     ]
+    },
+    {
+     "attribute": "構成",
+     "value": {
+      "core": "ALC",
+      "core_thickness_mm": 100,
+      "total_thickness_mm": 100,
+      "boards_per_side": 0,
+      "role": "外壁"
+     },
+     "confidence": 0.9,
+     "evidence": [
+      {
+       "clue": "壁種表@1#1",
+       "role": "主の根拠"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "ref": "wall_S",
+   "kind": "壁",
+   "confidence": 0.9,
+   "reason": "WALL_CENTER の線が部屋割り線と同じ位置。片側が部屋、片側が外部",
+   "evidence": [
+    {
+     "clue": "平面図@1#14",
+     "role": "主の根拠",
+     "reason": "壁芯線（位置）"
+    },
+    {
+     "clue": "平面図@1#13",
+     "role": "補助",
+     "reason": "部屋割り線（範囲）"
+    }
+   ],
+   "claims": [
+    {
+     "attribute": "芯線",
+     "value": [
+      [
+       0.0,
+       0.0
+      ],
+      [
+       6000.0,
+       0.0
+      ]
+     ],
+     "unit": "mm",
+     "confidence": 0.9,
+     "evidence": [
+      {
+       "clue": "平面図@1#14",
+       "role": "主の根拠"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "ref": "wall_E",
+   "kind": "壁",
+   "confidence": 0.9,
+   "reason": "WALL_CENTER の線が部屋割り線と同じ位置。片側が部屋、片側が外部",
+   "evidence": [
+    {
+     "clue": "平面図@1#16",
+     "role": "主の根拠",
+     "reason": "壁芯線（位置）"
+    },
+    {
+     "clue": "平面図@1#15",
+     "role": "補助",
+     "reason": "部屋割り線（範囲）"
+    }
+   ],
+   "claims": [
+    {
+     "attribute": "芯線",
+     "value": [
+      [
+       6000.0,
+       0.0
+      ],
+      [
+       6000.0,
+       4000.0
+      ]
+     ],
+     "unit": "mm",
+     "confidence": 0.9,
+     "evidence": [
+      {
+       "clue": "平面図@1#16",
+       "role": "主の根拠"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "ref": "wall_N",
+   "kind": "壁",
+   "confidence": 0.9,
+   "reason": "WALL_CENTER の線が部屋割り線と同じ位置。片側が部屋、片側が外部",
+   "evidence": [
+    {
+     "clue": "平面図@1#18",
+     "role": "主の根拠",
+     "reason": "壁芯線（位置）"
+    },
+    {
+     "clue": "平面図@1#17",
+     "role": "補助",
+     "reason": "部屋割り線（範囲）"
+    }
+   ],
+   "claims": [
+    {
+     "attribute": "芯線",
+     "value": [
+      [
+       6000.0,
+       4000.0
+      ],
+      [
+       0.0,
+       4000.0
+      ]
+     ],
+     "unit": "mm",
+     "confidence": 0.9,
+     "evidence": [
+      {
+       "clue": "平面図@1#18",
+       "role": "主の根拠"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "ref": "wall_W",
+   "kind": "壁",
+   "confidence": 0.9,
+   "reason": "WALL_CENTER の線が部屋割り線と同じ位置。片側が部屋、片側が外部",
+   "evidence": [
+    {
+     "clue": "平面図@1#20",
+     "role": "主の根拠",
+     "reason": "壁芯線（位置）"
+    },
+    {
+     "clue": "平面図@1#19",
+     "role": "補助",
+     "reason": "部屋割り線（範囲）"
+    }
+   ],
+   "claims": [
+    {
+     "attribute": "芯線",
+     "value": [
+      [
+       0.0,
+       4000.0
+      ],
+      [
+       0.0,
+       0.0
+      ]
+     ],
+     "unit": "mm",
+     "confidence": 0.9,
+     "evidence": [
+      {
+       "clue": "平面図@1#20",
+       "role": "主の根拠"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "ref": "room_101",
+   "kind": "部屋",
+   "confidence": 0.9,
+   "reason": "四本の部屋割り線が一つの閉じた輪郭。室名の文字 (3000,2000) が内側",
+   "evidence": [
+    {
+     "clue": "平面図@1#13",
+     "role": "主の根拠",
+     "reason": "部屋割り線"
+    },
+    {
+     "clue": "平面図@1#15",
+     "role": "主の根拠",
+     "reason": "部屋割り線"
+    },
+    {
+     "clue": "平面図@1#17",
+     "role": "主の根拠",
+     "reason": "部屋割り線"
+    },
+    {
+     "clue": "平面図@1#19",
+     "role": "主の根拠",
+     "reason": "部屋割り線"
+    },
+    {
+     "clue": "平面図@1#21",
+     "role": "主の根拠",
+     "reason": "室名の文字が輪郭の内側"
+    }
+   ],
+   "claims": [
+    {
+     "attribute": "室番号",
+     "value": "101",
+     "confidence": 0.95,
+     "evidence": [
+      {
+       "clue": "平面図@1#21",
+       "role": "主の根拠"
+      }
+     ]
+    },
+    {
+     "attribute": "室名",
+     "value": "事務室",
+     "confidence": 0.95,
+     "evidence": [
+      {
+       "clue": "平面図@1#21",
+       "role": "主の根拠"
+      }
+     ]
+    },
+    {
+     "attribute": "天井高",
+     "value": 2700,
+     "unit": "mm",
+     "confidence": 0.9,
+     "evidence": [
+      {
+       "clue": "仕上表@1#1",
+       "role": "主の根拠",
+       "reason": "room_no 101 の行の ceiling_height_mm"
+      },
+      {
+       "clue": "平面図@1#21",
+       "role": "補助",
+       "reason": "室番号が一致"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "ref": "room_101_side1",
+   "kind": "空間の境界",
+   "confidence": 0.9,
+   "reason": "部屋の輪郭を反時計回りにたどった一辺。壁芯線が重なるので物理的",
+   "evidence": [
+    {
+     "clue": "平面図@1#13",
+     "role": "主の根拠",
+     "reason": "部屋割り線"
+    },
+    {
+     "clue": "平面図@1#14",
+     "role": "補助",
+     "reason": "壁芯線"
+    }
+   ],
+   "claims": [
+    {
+     "attribute": "線分",
+     "value": [
+      [
+       0.0,
+       0.0
+      ],
+      [
+       6000.0,
+       0.0
+      ]
+     ],
+     "unit": "mm",
+     "confidence": 0.9,
+     "evidence": [
+      {
+       "clue": "平面図@1#13",
+       "role": "主の根拠"
+      }
+     ]
+    },
+    {
+     "attribute": "境界の種類",
+     "value": "物理的",
+     "confidence": 0.85,
+     "evidence": [
+      {
+       "clue": "平面図@1#14",
+       "role": "主の根拠",
+       "reason": "壁芯線が重なる"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "ref": "room_101_side2",
+   "kind": "空間の境界",
+   "confidence": 0.9,
+   "reason": "部屋の輪郭を反時計回りにたどった一辺。壁芯線が重なるので物理的",
+   "evidence": [
+    {
+     "clue": "平面図@1#15",
+     "role": "主の根拠",
+     "reason": "部屋割り線"
+    },
+    {
+     "clue": "平面図@1#16",
+     "role": "補助",
+     "reason": "壁芯線"
+    }
+   ],
+   "claims": [
+    {
+     "attribute": "線分",
+     "value": [
+      [
+       6000.0,
+       0.0
+      ],
+      [
+       6000.0,
+       4000.0
+      ]
+     ],
+     "unit": "mm",
+     "confidence": 0.9,
+     "evidence": [
+      {
+       "clue": "平面図@1#15",
+       "role": "主の根拠"
+      }
+     ]
+    },
+    {
+     "attribute": "境界の種類",
+     "value": "物理的",
+     "confidence": 0.85,
+     "evidence": [
+      {
+       "clue": "平面図@1#16",
+       "role": "主の根拠",
+       "reason": "壁芯線が重なる"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "ref": "room_101_side3",
+   "kind": "空間の境界",
+   "confidence": 0.9,
+   "reason": "部屋の輪郭を反時計回りにたどった一辺。壁芯線が重なるので物理的",
+   "evidence": [
+    {
+     "clue": "平面図@1#17",
+     "role": "主の根拠",
+     "reason": "部屋割り線"
+    },
+    {
+     "clue": "平面図@1#18",
+     "role": "補助",
+     "reason": "壁芯線"
+    }
+   ],
+   "claims": [
+    {
+     "attribute": "線分",
+     "value": [
+      [
+       6000.0,
+       4000.0
+      ],
+      [
+       0.0,
+       4000.0
+      ]
+     ],
+     "unit": "mm",
+     "confidence": 0.9,
+     "evidence": [
+      {
+       "clue": "平面図@1#17",
+       "role": "主の根拠"
+      }
+     ]
+    },
+    {
+     "attribute": "境界の種類",
+     "value": "物理的",
+     "confidence": 0.85,
+     "evidence": [
+      {
+       "clue": "平面図@1#18",
+       "role": "主の根拠",
+       "reason": "壁芯線が重なる"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "ref": "room_101_side4",
+   "kind": "空間の境界",
+   "confidence": 0.9,
+   "reason": "部屋の輪郭を反時計回りにたどった一辺。壁芯線が重なるので物理的",
+   "evidence": [
+    {
+     "clue": "平面図@1#19",
+     "role": "主の根拠",
+     "reason": "部屋割り線"
+    },
+    {
+     "clue": "平面図@1#20",
+     "role": "補助",
+     "reason": "壁芯線"
+    }
+   ],
+   "claims": [
+    {
+     "attribute": "線分",
+     "value": [
+      [
+       0.0,
+       4000.0
+      ],
+      [
+       0.0,
+       0.0
+      ]
+     ],
+     "unit": "mm",
+     "confidence": 0.9,
+     "evidence": [
+      {
+       "clue": "平面図@1#19",
+       "role": "主の根拠"
+      }
+     ]
+    },
+    {
+     "attribute": "境界の種類",
+     "value": "物理的",
+     "confidence": 0.85,
+     "evidence": [
+      {
+       "clue": "平面図@1#20",
+       "role": "主の根拠",
+       "reason": "壁芯線が重なる"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "ref": "out_S",
+   "kind": "空間の境界",
+   "confidence": 0.85,
+   "reason": "外壁の外側の境界（外部の側）",
+   "evidence": [
+    {
+     "clue": "平面図@1#13",
+     "role": "主の根拠"
+    },
+    {
+     "clue": "平面図@1#14",
+     "role": "補助"
+    }
+   ],
+   "claims": [
+    {
+     "attribute": "線分",
+     "value": [
+      [
+       6000.0,
+       0.0
+      ],
+      [
+       0.0,
+       0.0
+      ]
+     ],
+     "unit": "mm",
+     "confidence": 0.85,
+     "evidence": [
+      {
+       "clue": "平面図@1#13",
+       "role": "主の根拠"
+      }
+     ]
+    },
+    {
+     "attribute": "境界の種類",
+     "value": "物理的",
+     "confidence": 0.85,
+     "evidence": [
+      {
+       "clue": "平面図@1#14",
+       "role": "主の根拠"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "ref": "out_E",
+   "kind": "空間の境界",
+   "confidence": 0.85,
+   "reason": "外壁の外側の境界（外部の側）",
+   "evidence": [
+    {
+     "clue": "平面図@1#15",
+     "role": "主の根拠"
+    },
+    {
+     "clue": "平面図@1#16",
+     "role": "補助"
+    }
+   ],
+   "claims": [
+    {
+     "attribute": "線分",
+     "value": [
+      [
+       6000.0,
+       4000.0
+      ],
+      [
+       6000.0,
+       0.0
+      ]
+     ],
+     "unit": "mm",
+     "confidence": 0.85,
+     "evidence": [
+      {
+       "clue": "平面図@1#15",
+       "role": "主の根拠"
+      }
+     ]
+    },
+    {
+     "attribute": "境界の種類",
+     "value": "物理的",
+     "confidence": 0.85,
+     "evidence": [
+      {
+       "clue": "平面図@1#16",
+       "role": "主の根拠"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "ref": "out_N",
+   "kind": "空間の境界",
+   "confidence": 0.85,
+   "reason": "外壁の外側の境界（外部の側）",
+   "evidence": [
+    {
+     "clue": "平面図@1#17",
+     "role": "主の根拠"
+    },
+    {
+     "clue": "平面図@1#18",
+     "role": "補助"
+    }
+   ],
+   "claims": [
+    {
+     "attribute": "線分",
+     "value": [
+      [
+       0.0,
+       4000.0
+      ],
+      [
+       6000.0,
+       4000.0
+      ]
+     ],
+     "unit": "mm",
+     "confidence": 0.85,
+     "evidence": [
+      {
+       "clue": "平面図@1#17",
+       "role": "主の根拠"
+      }
+     ]
+    },
+    {
+     "attribute": "境界の種類",
+     "value": "物理的",
+     "confidence": 0.85,
+     "evidence": [
+      {
+       "clue": "平面図@1#18",
+       "role": "主の根拠"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "ref": "out_W",
+   "kind": "空間の境界",
+   "confidence": 0.85,
+   "reason": "外壁の外側の境界（外部の側）",
+   "evidence": [
+    {
+     "clue": "平面図@1#19",
+     "role": "主の根拠"
+    },
+    {
+     "clue": "平面図@1#20",
+     "role": "補助"
+    }
+   ],
+   "claims": [
+    {
+     "attribute": "線分",
+     "value": [
+      [
+       0.0,
+       0.0
+      ],
+      [
+       0.0,
+       4000.0
+      ]
+     ],
+     "unit": "mm",
+     "confidence": 0.85,
+     "evidence": [
+      {
+       "clue": "平面図@1#19",
+       "role": "主の根拠"
+      }
+     ]
+    },
+    {
+     "attribute": "境界の種類",
+     "value": "物理的",
+     "confidence": 0.85,
+     "evidence": [
+      {
+       "clue": "平面図@1#20",
+       "role": "主の根拠"
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "relations": [
+  {
+   "ref": "wall_S_storey",
+   "kind": "含む",
+   "from": "wall_S",
+   "to": {
+    "find": {
+     "kind": "階",
+     "name": "1階"
+    }
+   },
+   "confidence": 0.95
+  },
+  {
+   "ref": "wall_S_type",
+   "kind": "型である",
+   "from": "wall_S",
+   "to": "type_WT3",
+   "confidence": 0.5,
+   "reason": "図面に壁種の記号がない。壁種表に WT-3 の一行だけなので、低い確かさで提案する（確定は人）",
+   "evidence": [
+    {
+     "clue": "壁種表@1#1",
+     "role": "補助",
+     "reason": "表に一行だけ"
+    }
+   ]
+  },
+  {
+   "ref": "wall_E_storey",
+   "kind": "含む",
+   "from": "wall_E",
+   "to": {
+    "find": {
+     "kind": "階",
+     "name": "1階"
+    }
+   },
+   "confidence": 0.95
+  },
+  {
+   "ref": "wall_E_type",
+   "kind": "型である",
+   "from": "wall_E",
+   "to": "type_WT3",
+   "confidence": 0.5,
+   "reason": "図面に壁種の記号がない。壁種表に WT-3 の一行だけなので、低い確かさで提案する（確定は人）",
+   "evidence": [
+    {
+     "clue": "壁種表@1#1",
+     "role": "補助",
+     "reason": "表に一行だけ"
+    }
+   ]
+  },
+  {
+   "ref": "wall_N_storey",
+   "kind": "含む",
+   "from": "wall_N",
+   "to": {
+    "find": {
+     "kind": "階",
+     "name": "1階"
+    }
+   },
+   "confidence": 0.95
+  },
+  {
+   "ref": "wall_N_type",
+   "kind": "型である",
+   "from": "wall_N",
+   "to": "type_WT3",
+   "confidence": 0.5,
+   "reason": "図面に壁種の記号がない。壁種表に WT-3 の一行だけなので、低い確かさで提案する（確定は人）",
+   "evidence": [
+    {
+     "clue": "壁種表@1#1",
+     "role": "補助",
+     "reason": "表に一行だけ"
+    }
+   ]
+  },
+  {
+   "ref": "wall_W_storey",
+   "kind": "含む",
+   "from": "wall_W",
+   "to": {
+    "find": {
+     "kind": "階",
+     "name": "1階"
+    }
+   },
+   "confidence": 0.95
+  },
+  {
+   "ref": "wall_W_type",
+   "kind": "型である",
+   "from": "wall_W",
+   "to": "type_WT3",
+   "confidence": 0.5,
+   "reason": "図面に壁種の記号がない。壁種表に WT-3 の一行だけなので、低い確かさで提案する（確定は人）",
+   "evidence": [
+    {
+     "clue": "壁種表@1#1",
+     "role": "補助",
+     "reason": "表に一行だけ"
+    }
+   ]
+  },
+  {
+   "ref": "room_101_storey",
+   "kind": "集める",
+   "from": "room_101",
+   "to": {
+    "find": {
+     "kind": "階",
+     "name": "1階"
+    }
+   },
+   "confidence": 0.95
+  },
+  {
+   "ref": "room_101_side1_bounds",
+   "kind": "区切る",
+   "from": "room_101_side1",
+   "to": "room_101",
+   "role": {
+    "順": 1,
+    "向き": "反時計回り"
+   },
+   "confidence": 0.9
+  },
+  {
+   "ref": "room_101_side1_wall",
+   "kind": "境界の相手",
+   "from": "room_101_side1",
+   "to": "wall_S",
+   "confidence": 0.9,
+   "reason": "壁芯線が境界の線分と同じ位置"
+  },
+  {
+   "ref": "room_101_side2_bounds",
+   "kind": "区切る",
+   "from": "room_101_side2",
+   "to": "room_101",
+   "role": {
+    "順": 2,
+    "向き": "反時計回り"
+   },
+   "confidence": 0.9
+  },
+  {
+   "ref": "room_101_side2_wall",
+   "kind": "境界の相手",
+   "from": "room_101_side2",
+   "to": "wall_E",
+   "confidence": 0.9,
+   "reason": "壁芯線が境界の線分と同じ位置"
+  },
+  {
+   "ref": "room_101_side3_bounds",
+   "kind": "区切る",
+   "from": "room_101_side3",
+   "to": "room_101",
+   "role": {
+    "順": 3,
+    "向き": "反時計回り"
+   },
+   "confidence": 0.9
+  },
+  {
+   "ref": "room_101_side3_wall",
+   "kind": "境界の相手",
+   "from": "room_101_side3",
+   "to": "wall_N",
+   "confidence": 0.9,
+   "reason": "壁芯線が境界の線分と同じ位置"
+  },
+  {
+   "ref": "room_101_side4_bounds",
+   "kind": "区切る",
+   "from": "room_101_side4",
+   "to": "room_101",
+   "role": {
+    "順": 4,
+    "向き": "反時計回り"
+   },
+   "confidence": 0.9
+  },
+  {
+   "ref": "room_101_side4_wall",
+   "kind": "境界の相手",
+   "from": "room_101_side4",
+   "to": "wall_W",
+   "confidence": 0.9,
+   "reason": "壁芯線が境界の線分と同じ位置"
+  },
+  {
+   "ref": "out_S_bounds",
+   "kind": "区切る",
+   "from": "out_S",
+   "to": {
+    "find": {
+     "kind": "外部"
+    }
+   },
+   "confidence": 0.85
+  },
+  {
+   "ref": "out_S_wall",
+   "kind": "境界の相手",
+   "from": "out_S",
+   "to": "wall_S",
+   "confidence": 0.85
+  },
+  {
+   "ref": "out_S_vs_room_101_side1",
+   "kind": "向かい合う",
+   "from": "out_S",
+   "to": "room_101_side1",
+   "confidence": 0.85
+  },
+  {
+   "ref": "out_E_bounds",
+   "kind": "区切る",
+   "from": "out_E",
+   "to": {
+    "find": {
+     "kind": "外部"
+    }
+   },
+   "confidence": 0.85
+  },
+  {
+   "ref": "out_E_wall",
+   "kind": "境界の相手",
+   "from": "out_E",
+   "to": "wall_E",
+   "confidence": 0.85
+  },
+  {
+   "ref": "out_E_vs_room_101_side2",
+   "kind": "向かい合う",
+   "from": "out_E",
+   "to": "room_101_side2",
+   "confidence": 0.85
+  },
+  {
+   "ref": "out_N_bounds",
+   "kind": "区切る",
+   "from": "out_N",
+   "to": {
+    "find": {
+     "kind": "外部"
+    }
+   },
+   "confidence": 0.85
+  },
+  {
+   "ref": "out_N_wall",
+   "kind": "境界の相手",
+   "from": "out_N",
+   "to": "wall_N",
+   "confidence": 0.85
+  },
+  {
+   "ref": "out_N_vs_room_101_side3",
+   "kind": "向かい合う",
+   "from": "out_N",
+   "to": "room_101_side3",
+   "confidence": 0.85
+  },
+  {
+   "ref": "out_W_bounds",
+   "kind": "区切る",
+   "from": "out_W",
+   "to": {
+    "find": {
+     "kind": "外部"
+    }
+   },
+   "confidence": 0.85
+  },
+  {
+   "ref": "out_W_wall",
+   "kind": "境界の相手",
+   "from": "out_W",
+   "to": "wall_W",
+   "confidence": 0.85
+  },
+  {
+   "ref": "out_W_vs_room_101_side4",
+   "kind": "向かい合う",
+   "from": "out_W",
+   "to": "room_101_side4",
+   "confidence": 0.85
+  }
+ ],
+ "claims": [],
+ "unreadable": []
+}

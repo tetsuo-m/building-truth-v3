@@ -51,8 +51,10 @@ def test_the_command_never_needs_a_database_path(tmp_path):
     assert "--db" not in help_text and ".sqlite" not in help_text
 
 
-def test_a_terminal_only_subcommand_does_not_exist_yet():
-    """Stage 2 builds no confirmation command (BRIEF step2 §3); approve/decide/reject are stage 3."""
+def test_the_confirmation_subcommands_exist_and_say_they_are_terminal_only():
+    """Stage 3 (BRIEF step3 §3-3): approve / reject / decide / hold / name / exclude-room exist; their help
+    says that they run from a terminal only and ask y/N (G-1 (c))."""
     r = run("--help")
-    for word in ("approve", "decide", "reject"):
-        assert word not in r.stdout
+    for word in ("approve", "decide", "reject", "hold", "name", "exclude-room"):
+        assert word in r.stdout
+    assert "端末" in run("approve", "--help").stdout

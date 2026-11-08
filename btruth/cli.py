@@ -1,16 +1,23 @@
-"""The btruth command (stage 2): init / import / versions / compare / report.
+"""The btruth command.
+
+Stage 2: init / import / versions / compare / report. Stage 3: propose / items / issues / clues / show /
+measure, and the confirmation commands approve / reject / hold / decide / name / exclude-room.
 
 Every subcommand takes the project folder; the database path comes from settings/project.csv
-(G-1 (a): no *.sqlite on the command line, so the hook that stops direct database writes does not
-stop btruth). There is no confirmation command here (stage 3; terminal only; G-1 (b)).
+(G-1 (a): no database file name on the command line, so the hook that stops direct database writes
+does not stop btruth). The confirmation commands run from a terminal only, print the listing, then ask
+"確定しますか？ (y/N)" (G-1 (b), (c)); Claude Code is stopped before them by .claude/hooks/guard_confirm.py.
 """
 from __future__ import annotations
 
 import argparse
 import getpass
+import json
 import os
 import sys
 from pathlib import Path
+
+TERMINAL_HELP = "（端末からだけ動く。一覧を出してから y/N で確かめる。Claude Code は実行しない）"
 
 
 def _who(args) -> str:
@@ -32,6 +39,13 @@ def _resolve_version(store, ref: str) -> str:
     return rows[0]["id"]
 
 
+def _open(args):
+    from btruth.project import ProjectFolder, open_store
+    project = ProjectFolder.load(Path(args.folder))
+    return project, open_store(project)
+
+
+# ---------------------------------------------------------------------- stage 2
 def cmd_init(args) -> int:
     from btruth.project import init_project
     project = init_project(Path(args.folder), name=args.name, office_dir=Path(args.office) if args.office else None,
@@ -42,10 +56,9 @@ def cmd_init(args) -> int:
 
 def cmd_import(args) -> int:
     from btruth.intake import SourceExists, SourceNotFound, UnsupportedFormat, import_file
-    from btruth.project import ProjectFolder, open_store
-    project = ProjectFolder.load(Path(args.folder))
+    project, store = _open(args)
     mode = "new" if args.new else ("next" if args.next else "auto")
-    with open_store(project) as store:
+    with store:
         try:
             r = import_file(store, project, Path(args.file), source_name=args.source, kind=args.kind,
                             drawing_type=args.drawing_type, discipline=args.discipline,
@@ -67,9 +80,8 @@ def cmd_import(args) -> int:
 
 
 def cmd_versions(args) -> int:
-    from btruth.project import ProjectFolder, open_store
-    project = ProjectFolder.load(Path(args.folder))
-    with open_store(project) as store:
+    project, store = _open(args)
+    with store:
         rows = store.all("select s.name, s.kind, v.seq, v.file_name, v.imported_at, v.id from source_version v "
                          "join source s on s.id=v.source_id order by s.name, v.seq")
         for r in rows:
@@ -81,9 +93,8 @@ def cmd_versions(args) -> int:
 
 def cmd_compare(args) -> int:
     from btruth.compare import compare_versions
-    from btruth.project import ProjectFolder, open_store
-    project = ProjectFolder.load(Path(args.folder))
-    with open_store(project) as store:
+    project, store = _open(args)
+    with store:
         a, b = _resolve_version(store, args.version_a), _resolve_version(store, args.version_b)
         r = compare_versions(store, project, a, b, recorded_by=_who(args))
         f = r.frame
@@ -102,10 +113,9 @@ def cmd_compare(args) -> int:
 
 
 def cmd_report(args) -> int:
-    from btruth.project import ProjectFolder, open_store
     from btruth.report import build_report, render_text, write_report
-    project = ProjectFolder.load(Path(args.folder))
-    with open_store(project) as store:
+    project, store = _open(args)
+    with store:
         if args.out:
             out = write_report(store, project, Path(args.out), html=args.html, recorded_by=_who(args))
             print(f"レポートを書きました: {out}")
@@ -114,8 +124,230 @@ def cmd_report(args) -> int:
     return 0
 
 
+# ---------------------------------------------------------------------- stage 3: reading and proposing
+def cmd_clues(args) -> int:
+    """The observed clues of one version as JSON — what the agent reads (B-1). Layers are also given as roles."""
+    from btruth.common import loads
+    from btruth.compare import roles_for
+    from btruth.tables import effective_rows
+    project, store = _open(args)
+    with store:
+        vid = _resolve_version(store, args.version)
+        v = store.one("select v.*, s.name as source_name, s.kind as source_kind from source_version v join source s on s.id=v.source_id where v.id=?", vid)
+        layer_rows = effective_rows(store, project, "layer_roles")
+        clues = []
+        for c in store.all("select id, seq, kind, layer_raw, geometry_json, text_raw, style_json, format_extra_json from clue "
+                           "where source_version_id=? and parent_clue_id is null and generated_from is null and kind <> 'BLOCK_DEF' order by seq", vid):
+            clues.append({"ref": f"{v['source_name']}@{v['seq']}#{c['seq']}", "id": c["id"], "seq": c["seq"], "kind": c["kind"],
+                          "layer": c["layer_raw"], "roles": list(roles_for(c["layer_raw"], c["kind"], layer_rows)),
+                          "geometry": loads(c["geometry_json"]), "text": c["text_raw"], "style": loads(c["style_json"]),
+                          "extra": loads(c["format_extra_json"])})
+        attrs = {r["attribute"]: r["value"] for r in store.all(
+            "select attribute, value from source_attribute where source_id=? order by rowid", v["source_id"])}
+        print(json.dumps({"version": {"id": vid, "source_name": v["source_name"], "seq": v["seq"], "file_name": v["file_name"],
+                                      "source_kind": v["source_kind"], "attributes": attrs, "unit_factor": v["unit_factor"]},
+                          "clues": clues}, ensure_ascii=False, indent=1))
+    return 0
+
+
+def cmd_propose(args) -> int:
+    from btruth.propose import ProposalError, load_proposal, register_proposal
+    project, store = _open(args)
+    with store:
+        try:
+            r = register_proposal(store, project, load_proposal(Path(args.file)), recorded_by=_who(args),
+                                  instructions_path=Path(args.instructions) if args.instructions else None)
+        except ProposalError as exc:
+            print(f"登録できません: {exc}", file=sys.stderr)
+            return 2
+        print(f"提案を登録しました。解釈の ID {r.interpretation_id}")
+        print(f"  item {len(r.items)}  通った {r.passed}  はじかれた {r.rejected}  要確認 {len(r.issues)}")
+        for i in r.items:
+            if i["status"] == "はじかれた":
+                print(f"  はじかれた: {i['kind']} {i.get('ref') or ''}  {i['reason']}")
+        for iid in r.issues:
+            row = store.one("select kind, severity, subject_ids_json from issue where id=?", iid)
+            print(f"  要確認 [{row['severity']}] {row['kind']}  {row['subject_ids_json']}")
+        print("次は `btruth show` で画面を出し、人が端末で `btruth approve` を打つ。")
+    return 0
+
+
+def cmd_items(args) -> int:
+    from btruth.effective import item_status, proposed_kind_of
+    from btruth.review import describe_item
+    project, store = _open(args)
+    with store:
+        interps = store.all("select i.id, i.summary, i.recorded_at, a.name as agent from interpretation i join agent a on a.id=i.agent_id order by i.rowid desc")
+        for p in interps:
+            if args.interpretation and not p["id"].startswith(args.interpretation):
+                continue
+            items = store.all("select * from interpretation_item where interpretation_id=? order by rowid", p["id"])
+            if args.kind:
+                items = [i for i in items if i["element_id"] and proposed_kind_of(store, i["element_id"]) == args.kind]
+            if not items:
+                continue
+            print(f"解釈 {p['id']}  {p['agent']}  {p['summary'] or ''}  {p['recorded_at']}")
+            for i in items:
+                print("  " + describe_item(store, project, i))
+    return 0
+
+
+def cmd_issues(args) -> int:
+    from btruth.effective import effective_name, open_issues, proposed_kind_of
+    project, store = _open(args)
+    with store:
+        issues = open_issues(store, project)
+        if not issues:
+            print("開いている要確認はありません。")
+            return 0
+        for i in issues:
+            subjects = "、".join(f"{proposed_kind_of(store, s) or '要素'} 要素 {s} {effective_name(store, project, s) or ''}".rstrip()
+                                 for s in i["subject_ids"])
+            held = "（保留中）" if i["held"] else ""
+            print(f"{i['kind']} [{i['severity']}]{held}  {subjects}")
+            print(f"    要確認 {i['id']}  選択肢: {' / '.join(o['label'] for o in i['options'])}")
+            if i["facts"]:
+                print(f"    事実: {json.dumps(i['facts'], ensure_ascii=False)[:300]}")
+    return 0
+
+
+def cmd_show(args) -> int:
+    from btruth.show import write_show
+    project, store = _open(args)
+    with store:
+        out = Path(args.out) if args.out else project.out_dir / "show.html"
+        write_show(store, project, out, recorded_by=_who(args))
+        print(f"理解の確認の画面を書きました: {out}")
+    return 0
+
+
+def cmd_measure(args) -> int:
+    from btruth.measure import measure
+    project, store = _open(args)
+    with store:
+        def interp(prefix):
+            rows = store.all("select id from interpretation where id like ?", prefix + "%")
+            if len(rows) != 1:
+                raise SystemExit(f"解釈が一つに決まりません: {prefix}（{len(rows)} 件）")
+            return rows[0]["id"]
+        r = measure(store, project, interp(args.interpretation), interp(args.against), recorded_by=_who(args))
+        print(json.dumps(r, ensure_ascii=False, indent=1))
+    return 0
+
+
+# ---------------------------------------------------------------------- stage 3: confirmation (terminal only)
+def _confirm_wrapper(args):
+    from btruth.review import prompt_confirm
+    return prompt_confirm
+
+
+def _run_review(args, fn) -> int:
+    from btruth.review import ApprovalBlocked, NotATerminal
+    project, store = _open(args)
+    with store:
+        try:
+            result = fn(project, store)
+        except NotATerminal as exc:
+            print(str(exc), file=sys.stderr)
+            return 3
+        except ApprovalBlocked as exc:
+            print(str(exc), file=sys.stderr)
+            return 4
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+    if result is None:
+        print("記録しません。")
+    return 0
+
+
+def cmd_approve(args) -> int:
+    from btruth.review import approve_interpretation, approve_items
+
+    def go(project, store):
+        if args.interpretation:
+            rid = approve_interpretation(store, project, args.interpretation, reason=args.reason, reviewed_by=_who(args),
+                                         exclude=args.exclude or [], confirm=_confirm_wrapper(args))
+        else:
+            rid = approve_items(store, project, args.item, reason=args.reason, reviewed_by=_who(args), confirm=_confirm_wrapper(args))
+        if rid:
+            print(f"承認を記録しました（review {rid}）。")
+        return rid
+    return _run_review(args, go)
+
+
+def cmd_reject(args) -> int:
+    from btruth.review import reject_items
+
+    def go(project, store):
+        rid = reject_items(store, project, args.item, reason=args.reason, reviewed_by=_who(args), confirm=_confirm_wrapper(args))
+        if rid:
+            print(f"却下を記録しました（review {rid}）。")
+        return rid
+    return _run_review(args, go)
+
+
+def cmd_hold(args) -> int:
+    from btruth.review import hold_issue, hold_items
+
+    def go(project, store):
+        if args.issue:
+            rid = hold_issue(store, project, args.issue, reason=args.reason, reviewed_by=_who(args), confirm=_confirm_wrapper(args))
+        else:
+            rid = hold_items(store, project, args.item, reason=args.reason, reviewed_by=_who(args), confirm=_confirm_wrapper(args))
+        if rid:
+            print(f"保留を記録しました（review {rid}）。")
+        return rid
+    return _run_review(args, go)
+
+
+def _parse_value(text: str):
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        return text
+
+
+def cmd_decide(args) -> int:
+    from btruth.review import decide
+
+    def go(project, store):
+        rid = decide(store, project, args.element, args.attribute, _parse_value(args.value), reason=args.reason,
+                     reviewed_by=_who(args), unit=args.unit, basis_source_version_id=args.basis, confirm=_confirm_wrapper(args),
+                     issue_id=args.issue)
+        if rid:
+            print(f"判断を記録しました（review {rid}）。採用の言い分を書きました。")
+        return rid
+    return _run_review(args, go)
+
+
+def cmd_name(args) -> int:
+    from btruth.review import name_element
+
+    def go(project, store):
+        rid = name_element(store, project, args.element, args.name, reason=args.reason, reviewed_by=_who(args),
+                           confirm=_confirm_wrapper(args), issue_id=args.issue, attribute=args.attribute)
+        if rid:
+            print(f"名前を記録しました（review {rid}）。")
+        return rid
+    return _run_review(args, go)
+
+
+def cmd_exclude_room(args) -> int:
+    from btruth.review import exclude_room
+
+    def go(project, store):
+        rid = exclude_room(store, project, args.element, reason=args.reason, reviewed_by=_who(args), confirm=_confirm_wrapper(args),
+                           issue_id=args.issue)
+        if rid:
+            print(f"「部屋として扱わない」を記録しました（review {rid}）。")
+        return rid
+    return _run_review(args, go)
+
+
+# ---------------------------------------------------------------------- parser
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="btruth", description="building-truth v3 — 器と入口（第2段）")
+    p = argparse.ArgumentParser(prog="btruth", description="building-truth v3 — 器と入口（第2段）、解釈と確定（第3段）")
     sub = p.add_subparsers(dest="command", required=True)
 
     def common(sp):
@@ -156,6 +388,95 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--out", help="書き出す先（省くと画面に出す）")
     sp.add_argument("--html", action="store_true", help="HTML で書く（既定はテキスト）")
     sp.set_defaults(func=cmd_report)
+
+    sp = sub.add_parser("clues", help="一つの版の観測の手掛かりを JSON で出す（AI が読むためのもの）")
+    common(sp)
+    sp.add_argument("version", help="<出どころ>@<版の番号> か、版の ID の先頭")
+    sp.set_defaults(func=cmd_clues)
+
+    sp = sub.add_parser("propose", help="提案の JSON を登録する（ID を振り、規則の確かめを通す。承認はしない）")
+    common(sp)
+    sp.add_argument("file", help="提案の JSON")
+    sp.add_argument("--instructions", help="エージェントが従った手順書（スキル）のファイル。sha256 を agent に記録する")
+    sp.set_defaults(func=cmd_propose)
+
+    sp = sub.add_parser("items", help="解釈の item と状態（提案中／承認済み／却下／保留／はじかれた）の一覧")
+    common(sp)
+    sp.add_argument("--interpretation", help="解釈の ID（先頭でよい）で絞る")
+    sp.add_argument("--kind", help="要素の種類で絞る（壁、部屋、…）")
+    sp.set_defaults(func=cmd_items)
+
+    sp = sub.add_parser("issues", help="開いている要確認の一覧")
+    common(sp)
+    sp.set_defaults(func=cmd_issues)
+
+    sp = sub.add_parser("show", help="理解の確認の画面（HTML）を書く。要素をクリックすると根拠の手掛かりが光る")
+    common(sp)
+    sp.add_argument("--out", help="書き出す先（既定: <物件のフォルダ>/out/show.html）")
+    sp.set_defaults(func=cmd_show)
+
+    sp = sub.add_parser("measure", help="AI の解釈を固定の解釈と照らし、数を run_summary に残す（合否は付けない）")
+    common(sp)
+    sp.add_argument("--interpretation", required=True, help="AI の解釈の ID（先頭でよい）")
+    sp.add_argument("--against", required=True, help="固定の解釈の ID（先頭でよい）")
+    sp.set_defaults(func=cmd_measure)
+
+    # confirmation commands (terminal only; stopped for Claude Code by the hook)
+    _add = sub.add_parser
+
+    def confirm_parser(name: str, help_text: str):
+        return _add(name, help=help_text + " " + TERMINAL_HELP,
+                    description=f"{help_text}。{TERMINAL_HELP}。人が理由を書く。承認の前に、指す先が承認済みかを確かめる（決定 12）。")
+
+    sp = confirm_parser("approve", "承認する")
+    common(sp)
+    g = sp.add_mutually_exclusive_group(required=True)
+    g.add_argument("--interpretation", help="解釈の全部の item をまとめて承認する（一覧を出してから y/N）")
+    g.add_argument("--item", nargs="+", help="承認する item の ID（先頭でよい）")
+    sp.add_argument("--exclude", nargs="*", help="まとめての承認から外す item")
+    sp.add_argument("--reason", help="理由（人が書く）")
+    sp.set_defaults(func=cmd_approve)
+
+    sp = confirm_parser("reject", "却下する")
+    common(sp)
+    sp.add_argument("--item", nargs="+", required=True, help="却下する item の ID（先頭でよい）")
+    sp.add_argument("--reason", required=True, help="理由（人が書く。必須）")
+    sp.set_defaults(func=cmd_reject)
+
+    sp = confirm_parser("hold", "保留にする")
+    common(sp)
+    g = sp.add_mutually_exclusive_group(required=True)
+    g.add_argument("--item", nargs="+", help="保留にする item の ID")
+    g.add_argument("--issue", help="保留にする要確認の ID")
+    sp.add_argument("--reason", help="理由")
+    sp.set_defaults(func=cmd_hold)
+
+    sp = confirm_parser("decide", "判断：値を確定する（採用の言い分を書く）")
+    common(sp)
+    sp.add_argument("--element", required=True, help="要素の ID（先頭でよい）")
+    sp.add_argument("--attribute", required=True, help="属性（芯線、厚さ、境界の種類、…）")
+    sp.add_argument("--value", required=True, help="値（JSON として読める形。読めなければ文字）")
+    sp.add_argument("--unit", help="単位（mm など）")
+    sp.add_argument("--reason", help="理由（人が書く）")
+    sp.add_argument("--basis", help="根拠にした書類の版の ID（添えればその書類の格。決定 Q8）")
+    sp.add_argument("--issue", help="この判断で閉じる要確認の ID")
+    sp.set_defaults(func=cmd_decide)
+
+    sp = confirm_parser("name", "名前を付ける（名前のない空間など）")
+    common(sp)
+    sp.add_argument("--element", required=True, help="要素の ID（先頭でよい）")
+    sp.add_argument("--name", required=True, help="名前")
+    sp.add_argument("--attribute", default="名前", help="書く属性（既定: 名前。室名 なども）")
+    sp.add_argument("--reason", help="理由")
+    sp.add_argument("--issue", help="この判断で閉じる要確認の ID")
+    sp.set_defaults(func=cmd_name)
+
+    sp = confirm_parser("exclude-room", "部屋として扱わない（面積の合計から外す。決定 Q11）")
+    common(sp)
+    sp.add_argument("--element", required=True, help="要素の ID（先頭でよい）")
+    sp.add_argument("--reason", help="理由")
+    sp.add_argument("--issue", help="この判断で閉じる要確認の ID")
+    sp.set_defaults(func=cmd_exclude_room)
     return p
 
 

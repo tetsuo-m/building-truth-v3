@@ -38,3 +38,10 @@ ElementId,*,BT_Common,ElementId,,text,DB の ID そのもの（3-8-4 (f)）
 記号,記号の定義,BT_Common,Symbol,,json,ブロック名／ハッチ／文字の形（K）
 意味,記号の定義,BT_Common,Meaning,,json,
 図面の種類,記号の定義,BT_Common,AppliesToDrawing,,text,この凡例が効く図面
+線分,通り芯,,,,segment_mm,通り芯の線の始点と終点（全長が根拠。例10）
+厚さ,壁種,Qto_WallBaseQuantities,Width,,length_mm,型の総厚（E-5）
+階高,階,BT_Common,StoreyHeight,,length_mm,IFC に出すときの押し出しの高さ（決定 Q23）
+幅,建具の型,,,,length_mm,建具表の呼び幅
+高さ,建具の型,,,,length_mm,建具表の高さ
+仕様,建具の型,BT_Common,Specification,,text,建具表の仕様の欄
+名称,材料,,,Name,text,LGS65、PB12.5 など（E-4）

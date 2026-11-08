@@ -19,7 +19,7 @@ UNREAD_SQL = """
 select c.id, c.seq, c.kind, c.layer_raw, c.geometry_json, c.text_raw, c.generated_from
 from clue c
 where c.source_version_id = ? and c.parent_clue_id is null and c.kind <> 'BLOCK_DEF'
-  and not exists (select 1 from interpretation_evidence e where e.clue_id = c.id)
+  and not exists (select 1 from interpretation_evidence e where e.clue_id = c.id and coalesce(e.role, '') <> '読めない')
   and not exists (select 1 from claim_evidence e where e.clue_id = c.id)
   and not exists (select 1 from assumption_evidence e where e.clue_id = c.id)
 order by c.seq
